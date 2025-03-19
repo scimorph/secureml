@@ -1,0 +1,101 @@
+# HIPAA (Health Insurance Portability and Accountability Act) Compliance Preset
+# This preset defines the requirements for complying with the US HIPAA regulations
+
+regulation:
+  name: "HIPAA"
+  description: "Health Insurance Portability and Accountability Act"
+  version: "Public Law 104-191"
+  privacy_rule_effective: "2003-04-14"
+  security_rule_effective: "2005-04-20"
+  breach_notification_effective: "2009-09-23"
+
+# Protected Health Information (PHI) identifiers (18 identifiers under Safe Harbor)
+phi_identifiers:
+  - names
+  - addresses
+  - dates_related_to_individual
+  - telephone_numbers
+  - fax_numbers
+  - email_addresses
+  - ssn
+  - medical_record_numbers
+  - health_plan_beneficiary_numbers
+  - account_numbers
+  - certificate_or_license_numbers
+  - vehicle_identifiers
+  - device_identifiers
+  - web_urls
+  - ip_addresses
+  - biometric_identifiers
+  - full_face_photos
+  - any_other_unique_identifying_number_or_code
+
+# De-identification methods
+deidentification_methods:
+  - name: "Safe Harbor"
+    description: "Remove all 18 types of PHI identifiers"
+    validation_required: true
+  - name: "Expert Determination"
+    description: "Expert certifies very small risk that information could be used to identify individual"
+    validation_required: true
+    expert_qualifications: "Statistical or scientific knowledge and experience"
+
+# Security requirements
+security_requirements:
+  administrative_safeguards:
+    - security_management_process
+    - assigned_security_responsibility
+    - workforce_security
+    - information_access_management
+    - security_awareness_training
+    - security_incident_procedures
+    - contingency_plan
+    - evaluation
+    - business_associate_contracts
+  physical_safeguards:
+    - facility_access_controls
+    - workstation_use
+    - workstation_security
+    - device_and_media_controls
+  technical_safeguards:
+    - access_control:
+        unique_user_identification: true
+        emergency_access_procedure: true
+        automatic_logoff: true
+        encryption_and_decryption: true
+    - audit_controls: true
+    - integrity_controls: true
+    - transmission_security:
+        encryption: true
+
+# Data management
+data_management:
+  data_encrypted_field: "data_encrypted"
+  minimum_necessary_standard: true
+  deidentification_method_field: "deidentification_method"
+  authorization_required: true
+  consent_requirements:
+    required_for_research: true
+    required_for_marketing: true
+    required_for_fundraising: true
+
+# Breach notification
+breach_notification:
+  required: true
+  risk_assessment_required: true
+  notification_timeline: "60 days from discovery"
+  documentation_required: true
+
+# Business Associate requirements
+business_associates:
+  agreement_required: true
+  compliance_required: true
+  subcontractor_flow_down: true
+
+# Model requirements
+model_requirements:
+  privacy_impact_assessment: true
+  security_controls: true
+  audit_logging: true
+  access_controls: true
+  de_identification_capability: true 

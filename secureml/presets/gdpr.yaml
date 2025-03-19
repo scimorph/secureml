@@ -1,0 +1,97 @@
+# GDPR (General Data Protection Regulation) Compliance Preset
+# This preset defines the requirements for complying with the EU's GDPR
+
+regulation:
+  name: "GDPR"
+  description: "European Union General Data Protection Regulation"
+  version: "2016/679"
+  effective_date: "2018-05-25"
+
+# Personal data identifiers that should be protected
+personal_data_identifiers:
+  - name
+  - email
+  - phone
+  - address
+  - ip_address
+  - id_number
+  - passport
+  - date_of_birth
+  - location_data
+  - cookie_id
+  - device_id
+
+# Special categories of personal data that require additional protection
+special_categories:
+  - race
+  - ethnicity
+  - political_opinions
+  - religious_beliefs
+  - philosophical_beliefs
+  - trade_union_membership
+  - genetic_data
+  - biometric_data
+  - health_data
+  - sex_life
+  - sexual_orientation
+
+# Data minimization requirements
+data_minimization:
+  max_recommended_columns: 20  # Simplified heuristic
+  retention_period: "no longer than necessary"
+  requirements:
+    - "Only collect data necessary for specified purposes"
+    - "Delete data when no longer needed for original purpose"
+    - "Limit access to personal data to authorized personnel"
+
+# Consent requirements
+consent:
+  required: true
+  properties:
+    - "Freely given"
+    - "Specific"
+    - "Informed"
+    - "Unambiguous"
+  metadata_fields:
+    - "consent_obtained"
+    - "consent_date"
+    - "consent_method"
+    - "consent_scope"
+    - "withdrawal_method"
+
+# Model compliance requirements
+model_requirements:
+  right_to_be_forgotten: true
+  right_to_access: true
+  right_to_rectification: true
+  data_portability: true
+  automated_decision_requirements:
+    - "Explicit consent for automated decisions with significant effects"
+    - "Human oversight option"
+    - "Right to contest decisions"
+
+# Data security requirements
+security:
+  encryption_required: true
+  access_controls: true
+  breach_notification: true
+  impact_assessment_required: true
+
+# Cross-border data transfer
+cross_border_transfer:
+  allowed_locations:
+    - "EU"
+    - "EEA"
+    - "Countries with adequacy decision"
+  safeguards_required:
+    - "Standard contractual clauses"
+    - "Binding corporate rules"
+    - "Approved certification mechanisms"
+
+# Documentation requirements
+documentation:
+  processing_records_required: true
+  dpia_required_for:
+    - "Large scale processing of special categories"
+    - "Systematic monitoring of public areas"
+    - "Automated decision making with legal effects" 

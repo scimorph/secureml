@@ -1,0 +1,105 @@
+# CCPA (California Consumer Privacy Act) Compliance Preset
+# This preset defines the requirements for complying with California's CCPA
+
+regulation:
+  name: "CCPA"
+  description: "California Consumer Privacy Act"
+  version: "AB-375"
+  effective_date: "2020-01-01"
+  amended_by: "CPRA (California Privacy Rights Act, effective 2023-01-01)"
+
+# Personal information categories
+personal_information:
+  - identifiers:
+      - name
+      - alias
+      - postal_address
+      - ip_address
+      - email_address
+      - account_name
+      - ssn
+      - driver_license
+      - passport_number
+  - commercial_information:
+      - purchase_history
+      - consuming_tendencies
+  - biometric_information:
+      - fingerprint
+      - face_scan
+      - voice_recording
+  - internet_activity:
+      - browsing_history
+      - search_history
+      - website_interaction
+  - geolocation_data:
+      - physical_location
+      - movements
+  - professional_information:
+      - employment_history
+      - education_information
+  - sensory_data:
+      - audio
+      - visual
+  - inferences:
+      - preferences
+      - characteristics
+      - psychological_trends
+      - behavior
+      - attitudes
+
+# Consumer rights
+consumer_rights:
+  right_to_know:
+    required: true
+    disclosure_period: "12 months"
+  right_to_delete:
+    required: true
+    exceptions:
+      - "Complete transactions"
+      - "Detect security incidents"
+      - "Debug/repair errors"
+      - "Free speech protection"
+      - "Research purposes"
+      - "Internal uses aligned with consumer expectations"
+      - "Legal compliance"
+  right_to_opt_out:
+    required: true
+    notice_required: true
+    do_not_sell_mechanism: true
+  right_to_non_discrimination:
+    required: true
+    protected_actions:
+      - "Exercising CCPA rights"
+
+# Business obligations
+business_obligations:
+  notice_at_collection:
+    required: true
+    contents:
+      - "Categories of personal information collected"
+      - "Purposes for which information is used"
+      - "Link to privacy policy"
+  privacy_policy:
+    required: true
+    update_frequency: "at least once every 12 months"
+  verification_process:
+    required: true
+    response_timeframe: "45 days"
+
+# Data handling
+data_handling:
+  contains_ca_residents_field: "contains_ca_residents"
+  age_verification_required: true
+  opt_in_required_for_minors: true
+  data_sharing_disclosure_field: "data_shared_with_third_parties"
+  ccpa_disclosure_field: "ccpa_disclosure_provided"
+
+# Security requirements
+security:
+  reasonable_security_required: true
+  data_breach_liability: true
+  
+# Model requirements
+model_requirements:
+  supports_deletion_request: true
+  supports_data_portability: true 
