@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://github.com/scimorph/secureml/blob/master/secureml_logo.png" alt="SecureML Logo">
+  <img src="https://github.com/scimorph/secureml/blob/master/secureml_logo.png" alt="SecureML Logo" width="200">
 </p>
 
 # SecureML
