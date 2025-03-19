@@ -2,10 +2,10 @@
 name = "secureml"
 version = "0.1.0"
 description = "A Python library for privacy-preserving machine learning"
-authors = ["Your Name <your.email@example.com>"]
+authors = ["Enzo Paloschi Biondo <enzobiondo11@outlook.com>"]
 readme = "README.md"
 license = "MIT"
-repository = "https://github.com/yourusername/secureml"
+repository = "https://github.com/scimorph/secureml"
 documentation = "https://secureml.readthedocs.io"
 keywords = ["machine learning", "privacy", "security", "compliance", "gdpr"]
 
