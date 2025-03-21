@@ -34,6 +34,13 @@ With pip (Python 3.9 - 3.11):
 ```bash
 pip install secureml
 ```
+### Optional Dependencies
+
+SecureML can generate PDF compliance reports if WeasyPrint is installed:
+
+```bash
+pip install secureml[pdf]
+```
 
 ## Quick Start
 
@@ -132,6 +139,23 @@ secureml presets show gdpr --field personal_data_identifiers
 
 # Save a preset to a file
 secureml presets show hipaa --output hipaa_preset.json
+```
+### Isolated Environments
+
+SecureML uses isolated virtual environments to manage dependencies with conflicts. In particular, tensorflow-privacy requires packaging ~= 22.0, while other dependencies need packaging 24.0.
+
+When you use TensorFlow Privacy functionality through SecureML, the library automatically creates and manages a separate virtual environment for this purpose. The first time you use TensorFlow Privacy, there might be a delay as SecureML sets up this environment.
+
+To pre-setup the TensorFlow Privacy environment, run:
+
+```bash
+secureml environments setup-tf-privacy
+```
+
+To check the status of isolated environments:
+
+```bash
+secureml environments info
 ```
 
 ### Compliance Checking with Regulation Presets

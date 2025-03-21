@@ -19,6 +19,8 @@ from secureml import (
     load_preset,
 )
 
+from secureml.isolated_environments.tf_privacy import create_environment, get_env_path
+
 
 @click.group()
 @click.version_option()
@@ -385,6 +387,33 @@ def show_preset(preset_name, field, output):
                 click.echo(json.dumps(preset, indent=2))
     except Exception as e:
         click.echo(f"Error: {str(e)}", err=True)
+
+
+@cli.group()
+def environments():
+    """Manage isolated environments for dependency-conflicting packages."""
+    pass
+
+
+@environments.command("setup-tf-privacy")
+@click.option(
+    "--force", is_flag=True, help="Force recreation of the environment even if it exists"
+)
+def setup_tf_privacy(force):
+    """Set up the isolated environment for TensorFlow Privacy."""
+    click.echo("Setting up TensorFlow Privacy isolated environment...")
+    env_path = create_environment(force=force)
+    click.echo(f"Environment created at: {env_path}")
+
+
+@environments.command("info")
+def environment_info():
+    """Show information about isolated environments."""
+    tf_privacy_path = get_env_path()
+    if tf_privacy_path.exists():
+        click.echo(f"TensorFlow Privacy environment: {tf_privacy_path} (Installed)")
+    else:
+        click.echo(f"TensorFlow Privacy environment: {tf_privacy_path} (Not installed)")
 
 
 if __name__ == "__main__":
