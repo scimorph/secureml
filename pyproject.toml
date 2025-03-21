@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "secureml"
-version = "0.1.0"
+version = "0.1.1-alpha"
 description = "A Python library for privacy-preserving machine learning"
 authors = ["Enzo Paloschi Biondo <enzobiondo11@outlook.com>"]
 readme = "README.md"

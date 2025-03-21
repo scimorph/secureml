@@ -1,68 +1,97 @@
 # SecureML Tests
 
-This directory contains unit tests for the SecureML library. These tests ensure that the library's functionality works as expected and help prevent regressions when making changes.
+This directory contains comprehensive test suites for the SecureML library. The tests are designed to ensure that all components of the library work as expected and maintain compatibility as the project evolves.
 
-## Running Tests
+## Test Structure
 
-You can run the tests using the `pytest` command from the root directory of the project:
+The tests are organized by module, with each module having its own test file:
+
+- `test_anonymization.py`: Tests for the anonymization module (k-anonymity, l-diversity, etc.)
+- `test_privacy.py`: Tests for the privacy module (differential privacy, etc.)
+- `test_compliance.py`: Tests for the compliance module (GDPR, CCPA, HIPAA checks)
+- `test_audit.py`: Tests for the audit logging and tracking module
+- `test_synthetic.py`: Tests for the synthetic data generation module
+- `test_federated.py`: Tests for the federated learning module
+- `test_reporting.py`: Tests for the report generation module
+- `test_cli.py`: Tests for the command-line interface
+- `test_integrations.py`: Integration tests for entire workflows
+
+## Testing Approach
+
+The test suite employs the following strategies:
+
+1. **Unit Testing**: Each function and class is tested in isolation to ensure it works correctly.
+2. **Mock Objects**: External dependencies and complex components are mocked to focus on the specific unit under test.
+3. **Parametrization**: Tests use parametrization to cover multiple scenarios and edge cases.
+4. **Fixtures**: Common test setups are created as fixtures to promote code reuse.
+5. **Integration Testing**: Critical workflows are tested end-to-end to ensure components work together.
+
+## Test Framework
+
+The tests are implemented using:
+
+- **pytest**: The primary test framework
+- **unittest**: Used for certain test cases that benefit from the unittest.TestCase class
+- **unittest.mock**: For mocking external dependencies
+- **tempfile**: For creating temporary test files and directories
+
+## Running the Tests
+
+To run the entire test suite:
 
 ```bash
-# Run all tests
 pytest
-
-# Run with verbose output
-pytest -v
-
-# Run a specific test file
-pytest tests/test_anonymization.py
-
-# Run a specific test class
-pytest tests/test_anonymization.py::TestAnonymization
-
-# Run a specific test
-pytest tests/test_anonymization.py::TestAnonymization::test_anonymize_basic
 ```
 
-## Test Coverage
-
-To run tests with coverage reporting:
+To run tests for a specific module:
 
 ```bash
-# Run tests with coverage
-pytest --cov=secureml
-
-# Generate HTML coverage report
-pytest --cov=secureml --cov-report=html
+pytest test_anonymization.py
 ```
 
-This will create a directory called `htmlcov` with an HTML report of the test coverage. You can open `htmlcov/index.html` in a web browser to view the report.
+To run a specific test:
 
-## Test Files
+```bash
+pytest test_anonymization.py::TestAnonymization::test_k_anonymize
+```
 
-- `test_anonymization.py`: Tests for the anonymization module
-- (Future tests to be added for privacy, compliance, and synthetic data modules)
+To run tests with coverage information:
 
-## Writing Tests
+```bash
+pytest --cov=secureml
+```
 
-When adding new features to SecureML, please also add corresponding tests. Each test should:
+## Test Configurations
 
-1. Test a specific functionality
-2. Have a descriptive name
-3. Include assertions that verify the expected behavior
-4. Be independent from other tests (can run in isolation)
+The test suite uses the following configuration:
 
-Here's an example of a well-structured test:
+- Test fixtures are defined in each test file
+- Mocks are used to simulate the behavior of components not directly under test
+- Temporary files and directories are used for testing I/O operations
+- Random seeds are set for reproducibility when using random data
 
-```python
-def test_feature_x():
-    """Test that feature X behaves as expected."""
-    # Set up test data
-    input_data = ...
-    
-    # Call the function being tested
-    result = feature_x(input_data)
-    
-    # Assert the expected outcome
-    assert result.property_a == expected_value
-    assert result.property_b is True
-``` 
+## Contributing New Tests
+
+When adding new functionality to SecureML, please also add corresponding tests. Follow these guidelines:
+
+1. Create tests for both the happy path and error cases
+2. Use parametrized tests to cover multiple scenarios
+3. Use mocking for external dependencies
+4. Follow the existing naming patterns
+5. Add appropriate docstrings to test functions
+6. Ensure tests are isolated and don't depend on external state
+
+## Continuous Integration
+
+These tests are automatically run as part of the CI/CD pipeline for SecureML. All tests must pass before changes are merged into the main codebase.
+
+## Test Documentation
+
+Each test file includes detailed docstrings explaining:
+
+- The purpose of each test
+- What functionality is being tested
+- Expected behavior and outcomes
+- Any special setup or configuration required
+
+This documentation helps other developers understand what's being tested and why, making it easier to maintain and extend the test suite as the project evolves.

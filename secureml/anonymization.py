@@ -678,6 +678,7 @@ def _apply_pseudonymization(
                 lambda x: _preserve_format(
                     x, _generate_hash(str(x)), format_pattern
                 ) if pd.notna(x) else x
+            )
         elif strategy == "fpe":
             pseudonymized_data[col] = pseudonymized_data[col].apply(
                 lambda x: _fpe_pseudonym(str(x), format_pattern)
