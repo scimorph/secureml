@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "secureml"
-version = "0.1.1-alpha"
+version = "0.1.8-alpha"
 description = "A Python library for privacy-preserving machine learning"
 authors = ["Enzo Paloschi Biondo <enzobiondo11@outlook.com>"]
 readme = "README.md"
@@ -23,6 +23,7 @@ sdv = "*"
 jinja2 = "^3.1.4"
 matplotlib = "^3.7.1"
 click = "^8.1.8"
+pyarrow = "^19.0.1"
 weasyprint = {version = "^64.1", optional = true}
 
 [tool.poetry.extras]

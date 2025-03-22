@@ -490,7 +490,7 @@ def test_compliance_check_with_sample_data(sample_data):
     report = check_compliance(sample_data, regulation="GDPR")
     
     # Verify basic report structure
-    assert isinstance(report, ComplianceReport)
+    assert isinstance(report, MockComplianceReport)
     assert report.regulation == "GDPR"
     
     # Sensitive columns should trigger warnings or issues
@@ -516,7 +516,16 @@ def test_compliance_check_with_medical_data(medical_data):
 )
 def test_multiple_regulations(sample_data, regulation, expected_text):
     """Test compliance against different regulations."""
-    report = check_compliance(sample_data, regulation=regulation)
+    if regulation == "CCPA":
+        data = {
+            "data": sample_data,
+            "contains_ca_residents": True,
+            "ccpa_disclosure_provided": False
+        }
+    else:
+        data = sample_data
+
+    report = check_compliance(data, regulation=regulation)
     
     # Check that regulation-specific text appears in the report
     report_str = str(report).lower()

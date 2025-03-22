@@ -5,7 +5,7 @@ This library provides tools for handling sensitive data in AI/ML workflows
 while maintaining compliance with privacy regulations like GDPR, CCPA, and HIPAA.
 """
 
-__version__ = "0.1.1-alpha"
+__version__ = "0.1.8-alpha"
 
 # Export core functions for easier imports
 from secureml.anonymization import anonymize
@@ -49,4 +49,4 @@ __all__ = [
     "ComplianceAuditor",
     # CLI entry point
     "cli",
-] 
+]

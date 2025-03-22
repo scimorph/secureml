@@ -19,14 +19,12 @@ _HAS_FLOWER = False
 _HAS_PYTORCH = False
 _HAS_TENSORFLOW = False
 
-# Try importing Flower
-try:
-    import flwr as fl
-    from flwr.common import EvaluateIns, EvaluateRes, FitIns, FitRes, Parameters
-    from flwr.server.client_proxy import ClientProxy
-    _HAS_FLOWER = True
-except ImportError:
-    pass
+# Importing Flower
+import flwr as fl
+from flwr.common import EvaluateIns, EvaluateRes, FitIns, FitRes, Parameters
+from flwr.server.client_proxy import ClientProxy
+print("Flower imported")
+_HAS_FLOWER = True
 
 # Try importing PyTorch
 try:
@@ -749,6 +747,10 @@ def _create_pytorch_server(
     Returns:
         A configured Flower server
     """
+
+    if not _HAS_FLOWER:  # Add missing Flower check
+        raise ImportError("Flower is required but not installed.")
+
     # Make sure PyTorch is available
     if not _HAS_PYTORCH:
         raise ImportError("PyTorch is required but not installed.")
@@ -786,9 +788,10 @@ def _create_pytorch_server(
             eval_fn=kwargs.get("eval_fn", None),
             **kwargs.get("strategy_kwargs", {})
         )
+    from flwr.server.client_manager import SimpleClientManager
     
     # Create and return server
-    return fl.server.Server(strategy=strategy)
+    return fl.server.Server(strategy=strategy, client_manager=SimpleClientManager())
 
 
 def _create_tensorflow_server(
@@ -840,7 +843,8 @@ def _create_tensorflow_server(
         )
     
     # Create and return server
-    return fl.server.Server(strategy=strategy)
+    from flwr.server.client_manager import SimpleClientManager
+    return fl.server.Server(strategy=strategy, client_manager=SimpleClientManager())
 
 
 def _prepare_data_for_pytorch(

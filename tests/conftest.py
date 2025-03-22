@@ -5,6 +5,7 @@ This module contains fixtures that can be used across all test files.
 """
 
 import os
+import sys
 import tempfile
 from typing import Dict, List, Any
 
@@ -12,6 +13,23 @@ import pandas as pd
 import pytest
 import numpy as np
 
+
+# Define a minimal mock for Flower (fl)
+class MockFlower:
+    class client:
+        class Client:
+            pass  # Minimal implementation for type annotation
+
+    class server:
+        class Server:
+            pass  # For -> fl.server.Server    
+
+
+# Apply the mock at session start
+def pytest_sessionstart(session):
+    fl_mock = MockFlower()
+    sys.modules["flwr"] = fl_mock
+    import secureml.federated
 
 @pytest.fixture
 def sample_data() -> pd.DataFrame:

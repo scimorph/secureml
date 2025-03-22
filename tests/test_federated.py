@@ -5,521 +5,739 @@ Tests for the federated learning module of SecureML.
 import unittest
 import tempfile
 import os
-import json
 import numpy as np
 import pandas as pd
-from unittest.mock import patch, MagicMock, Mock
+from unittest.mock import patch, MagicMock
 import pytest
 
-# Mock implementations for federated learning components
-class MockFederatedServer:
-    """Mock implementation of FederatedServer."""
-    
-    def __init__(self, model_config, aggregation_method="federated_averaging"):
-        """Initialize the federated server."""
-        self.model_config = model_config
-        self.aggregation_method = aggregation_method
-        self.clients = []
-        self.global_model = {"weights": [np.zeros((10, 10)), np.zeros(10)],
-                             "config": model_config}
-        self.round = 0
-        self.training_history = []
-    
-    def register_client(self, client):
-        """Register a client with the server."""
-        client_id = f"client_{len(self.clients)}"
-        self.clients.append({"id": client_id, "client": client})
-        return client_id
-    
-    def broadcast_model(self):
-        """Broadcast the global model to all clients."""
-        for client_info in self.clients:
-            client_info["client"].receive_model(self.global_model)
-        
-        return len(self.clients)
-    
-    def collect_updates(self):
-        """Collect model updates from all clients."""
-        updates = []
-        for client_info in self.clients:
-            client_update = client_info["client"].send_update()
-            if client_update:
-                updates.append(client_update)
-        
-        return updates
-    
-    def aggregate_updates(self, updates):
-        """Aggregate updates from clients using the specified method."""
-        if not updates:
-            return self.global_model
-        
-        # Simple mock aggregation - just average the weights
-        new_weights = []
-        for i in range(len(self.global_model["weights"])):
-            layer_updates = [u["weights"][i] for u in updates]
-            new_weights.append(np.mean(layer_updates, axis=0))
-        
-        self.global_model["weights"] = new_weights
-        return self.global_model
-    
-    def train_round(self):
-        """Run one round of federated training."""
-        self.round += 1
-        
-        # Broadcast global model
-        self.broadcast_model()
-        
-        # Collect updates
-        updates = self.collect_updates()
-        
-        # Aggregate updates
-        self.aggregate_updates(updates)
-        
-        # Store training metrics
-        metrics = {
-            "round": self.round,
-            "num_clients": len(self.clients),
-            "num_updates": len(updates)
-        }
-        self.training_history.append(metrics)
-        
-        return metrics
-    
-    def train(self, num_rounds):
-        """Train for multiple rounds."""
-        results = []
-        for _ in range(num_rounds):
-            round_result = self.train_round()
-            results.append(round_result)
-        
-        return results
-    
-    def save_model(self, filepath):
-        """Save the global model to a file."""
-        # Convert numpy arrays to lists for JSON serialization
-        model_json = {
-            "config": self.global_model["config"],
-            "weights": [w.tolist() for w in self.global_model["weights"]]
-        }
-        
-        with open(filepath, 'w') as f:
-            json.dump(model_json, f)
-        
-        return filepath
-    
-    def load_model(self, filepath):
-        """Load a global model from a file."""
-        with open(filepath, 'r') as f:
-            model_json = json.load(f)
-        
-        # Convert lists back to numpy arrays
-        self.global_model = {
-            "config": model_json["config"],
-            "weights": [np.array(w) for w in model_json["weights"]]
-        }
-        
-        return self.global_model
+# Import the module to be tested
+from secureml.federated import (
+    FederatedConfig,
+    train_federated,
+    start_federated_server,
+    start_federated_client,
+    _detect_framework,
+    _prepare_data_for_pytorch,
+    _prepare_data_for_tensorflow,
+    _create_pytorch_client,
+    _create_tensorflow_client,
+    _save_model
+)
 
-
-class MockFederatedClient:
-    """Mock implementation of FederatedClient."""
+# Setup mock objects to avoid actual network connections and ML framework dependencies
+# Create a mock Flower module for patching
+class MockFlower:
+    """Mock class for the flwr (Flower) module"""
+    class simulation:
+        @staticmethod
+        def start_simulation(*args, **kwargs):
+            pass
     
-    def __init__(self, data=None, differential_privacy=False, dp_epsilon=1.0):
-        """Initialize the federated client."""
-        self.data = data
-        self.local_model = None
-        self.differential_privacy = differential_privacy
-        self.dp_epsilon = dp_epsilon
-        self.training_history = []
-    
-    def receive_model(self, model):
-        """Receive a model from the server."""
-        # Deep copy the model weights to avoid shared references
-        self.local_model = {
-            "config": model["config"],
-            "weights": [np.copy(w) for w in model["weights"]]
-        }
-        return True
-    
-    def train_local_model(self, epochs=1, batch_size=32):
-        """Train the local model on the client's data."""
-        if self.local_model is None or self.data is None:
-            return False
+    class server:
+        class ServerConfig:
+            def __init__(self, num_rounds=3):
+                self.num_rounds = num_rounds
         
-        # Mock training - just add some random noise to the weights
-        for i in range(len(self.local_model["weights"])):
-            # Generate random noise
-            noise = np.random.normal(0, 0.01, self.local_model["weights"][i].shape)
+        @staticmethod
+        def start_server(*args, **kwargs):
+            pass
+        
+        @staticmethod
+        def Server(*args, **kwargs):
+            return MagicMock()
+    
+    class client:
+        @staticmethod
+        def start_client(*args, **kwargs):
+            pass
+        
+        class NumPyClient:
+            def to_client(self):
+                return MagicMock()
             
-            # Apply differential privacy if enabled
-            if self.differential_privacy:
-                # Mock DP implementation - scale noise by epsilon
-                noise = noise * (1.0 / self.dp_epsilon)
+        Client = MagicMock()    
+    
+    class common:
+        @staticmethod
+        def ndarrays_to_parameters(weights):
+            return weights
+
+# Patch modules
+fl_mock = MockFlower()
+torch_mock = MagicMock()
+tf_mock = MagicMock()
+
+@pytest.fixture(autouse=True)
+def setup_mocks(monkeypatch):
+    monkeypatch.setattr("secureml.federated.fl", fl_mock)
+    monkeypatch.setattr("secureml.federated.torch", MagicMock())
+    monkeypatch.setattr("secureml.federated._HAS_PYTORCH", True)
+    monkeypatch.setattr("secureml.federated.tf", MagicMock())
+    monkeypatch.setattr("secureml.federated._HAS_TENSORFLOW", True)
+    monkeypatch.setattr("secureml.federated._HAS_FLOWER", True)
+
+
+class TestFederatedConfig(unittest.TestCase):
+    """Test cases for the FederatedConfig class."""
+    
+    def test_config_initialization(self):
+        """Test that the FederatedConfig class initializes with correct defaults."""
+        config = FederatedConfig()
+        
+        # Check default values
+        self.assertEqual(config.num_rounds, 3)
+        self.assertEqual(config.fraction_fit, 1.0)
+        self.assertEqual(config.min_fit_clients, 2)
+        self.assertEqual(config.min_available_clients, 2)
+        self.assertEqual(config.server_address, "0.0.0.0:8080")
+        self.assertFalse(config.use_secure_aggregation)
+        self.assertFalse(config.apply_differential_privacy)
+        self.assertEqual(config.epsilon, 1.0)
+        self.assertEqual(config.delta, 1e-5)
+    
+    def test_config_custom_values(self):
+        """Test that FederatedConfig accepts custom values."""
+        config = FederatedConfig(
+            num_rounds=5,
+            fraction_fit=0.8,
+            min_fit_clients=3,
+            min_available_clients=4,
+            server_address="localhost:8081",
+            use_secure_aggregation=True,
+            apply_differential_privacy=True,
+            epsilon=0.5,
+            delta=1e-6,
+            custom_param="custom_value"
+        )
+        
+        # Check custom values
+        self.assertEqual(config.num_rounds, 5)
+        self.assertEqual(config.fraction_fit, 0.8)
+        self.assertEqual(config.min_fit_clients, 3)
+        self.assertEqual(config.min_available_clients, 4)
+        self.assertEqual(config.server_address, "localhost:8081")
+        self.assertTrue(config.use_secure_aggregation)
+        self.assertTrue(config.apply_differential_privacy)
+        self.assertEqual(config.epsilon, 0.5)
+        self.assertEqual(config.delta, 1e-6)
+        self.assertEqual(config.extra_kwargs["custom_param"], "custom_value")
+
+
+class TestFrameworkDetection(unittest.TestCase):
+    """Test cases for framework detection."""
+    
+    @patch("secureml.federated._HAS_PYTORCH", True)
+    def test_detect_pytorch(self):
+        """Test that PyTorch models are correctly detected."""
+        # Create a mock PyTorch model
+        model = MagicMock()
+        torch_mock.nn.Module = MagicMock
+        
+        # Ensure the model is detected as a PyTorch model
+        with patch("secureml.federated.isinstance", return_value=True):
+            framework = _detect_framework(model)
+            self.assertEqual(framework, "pytorch")
+    
+    @patch("secureml.federated._HAS_TENSORFLOW", True)
+    def test_detect_tensorflow(self):
+        """Test that TensorFlow models are correctly detected."""
+        # Create a mock TensorFlow model
+        model = MagicMock()
+        tf_mock.keras.Model = MagicMock
+        tf_mock.Module = MagicMock
+        
+        # Mock the isinstance check to return True for TensorFlow models
+        def mock_isinstance(obj, class_or_tuple):
+            if class_or_tuple == torch_mock.nn.Module:
+                return False
+            return True
+        
+        # Ensure the model is detected as a TensorFlow model
+        with patch("secureml.federated.isinstance", mock_isinstance):
+            framework = _detect_framework(model)
+            self.assertEqual(framework, "tensorflow")
+    
+    @patch("secureml.federated._HAS_PYTORCH", True)
+    @patch("secureml.federated._HAS_TENSORFLOW", True)
+    def test_detect_unknown_framework(self):
+        """Test that ValueError is raised for unknown models."""
+        # Create a model that is neither PyTorch nor TensorFlow
+        model = MagicMock()
+        
+        # Mock the isinstance check to always return False
+        with patch("secureml.federated.isinstance", return_value=False):
+            with self.assertRaises(ValueError):
+                _detect_framework(model)
+
+
+class TestDataPreparation(unittest.TestCase):
+    """Test cases for data preparation functions."""
+    
+    def test_prepare_data_for_pytorch_dataframe(self):
+        """Test preparing pandas DataFrame for PyTorch."""
+        # Create a test DataFrame
+        df = pd.DataFrame({
+            "feature1": [1, 2, 3],
+            "feature2": [4, 5, 6],
+            "target": [0, 1, 0]
+        })
+        
+        # Prepare data with target column specified
+        x, y = _prepare_data_for_pytorch(df, target_column="target")
+        
+        # Check that features and target are correctly separated
+        self.assertEqual(x.shape, (3, 2))
+        self.assertEqual(y.shape, (3,))
+        self.assertTrue(np.array_equal(y, np.array([0, 1, 0])))
+        
+        # Prepare data without target column specified (using last column)
+        x, y = _prepare_data_for_pytorch(df)
+        
+        # Check that features and target are correctly separated
+        self.assertEqual(x.shape, (3, 2))
+        self.assertEqual(y.shape, (3,))
+        self.assertTrue(np.array_equal(y, np.array([0, 1, 0])))
+    
+    def test_prepare_data_for_pytorch_numpy(self):
+        """Test preparing numpy array for PyTorch."""
+        # Create a test numpy array
+        array = np.array([
+            [1, 4, 0],
+            [2, 5, 1],
+            [3, 6, 0]
+        ])
+        
+        # Prepare data (using last column as target)
+        x, y = _prepare_data_for_pytorch(array)
+        
+        # Check that features and target are correctly separated
+        self.assertEqual(x.shape, (3, 2))
+        self.assertEqual(y.shape, (3,))
+        self.assertTrue(np.array_equal(y, np.array([0, 1, 0])))
+    
+    def test_prepare_data_for_tensorflow(self):
+        """Test that tensorflow data preparation uses pytorch preparation."""
+        # Create a test DataFrame
+        df = pd.DataFrame({
+            "feature1": [1, 2, 3],
+            "feature2": [4, 5, 6],
+            "target": [0, 1, 0]
+        })
+        
+        # Verify that the tensorflow preparation function calls the pytorch one
+        with patch("secureml.federated._prepare_data_for_pytorch") as mock_prepare:
+            mock_prepare.return_value = (np.array([[1, 4], [2, 5], [3, 6]]), np.array([0, 1, 0]))
+            x, y = _prepare_data_for_tensorflow(df, target_column="target")
+            mock_prepare.assert_called_once_with(df, target_column="target")
             
-            # Update weights
-            self.local_model["weights"][i] += noise
-        
-        # Store training metrics
-        metrics = {
-            "epochs": epochs,
-            "batch_size": batch_size,
-            "samples": len(self.data) if hasattr(self.data, "__len__") else 0,
-            "dp_enabled": self.differential_privacy
-        }
-        self.training_history.append(metrics)
-        
-        return metrics
-    
-    def send_update(self):
-        """Send model update to the server."""
-        if self.local_model is None:
-            return None
-        
-        # Return a copy of the local model
-        return {
-            "config": self.local_model["config"],
-            "weights": [np.copy(w) for w in self.local_model["weights"]]
-        }
-    
-    def evaluate_model(self, test_data=None):
-        """Evaluate the local model."""
-        if self.local_model is None:
-            return None
-        
-        # Mock evaluation - just return random metrics
-        metrics = {
-            "accuracy": np.random.uniform(0.7, 0.95),
-            "loss": np.random.uniform(0.1, 0.5)
-        }
-        
-        return metrics
+            # Check that the output matches what we expect from _prepare_data_for_pytorch
+            self.assertEqual(x.shape, (3, 2))
+            self.assertEqual(y.shape, (3,))
 
 
-# Create mock objects
-FederatedServer = MagicMock(side_effect=MockFederatedServer)
-FederatedClient = MagicMock(side_effect=MockFederatedClient)
-SecureAggregator = MagicMock()
-
-# Patch the module
-patch_path = 'secureml.federated'
-patch(f'{patch_path}.FederatedServer', FederatedServer).start()
-patch(f'{patch_path}.FederatedClient', FederatedClient).start()
-patch(f'{patch_path}.SecureAggregator', SecureAggregator).start()
-
-# Import the patched module
-from secureml.federated import FederatedServer, FederatedClient, SecureAggregator
-
-
-class TestFederatedLearning(unittest.TestCase):
-    """Test cases for the federated learning module."""
+@patch("secureml.federated._HAS_FLOWER", True)
+class TestTrainFederated(unittest.TestCase):
+    """Test cases for the train_federated function."""
     
     def setUp(self):
         """Set up test environment."""
         # Create a temporary directory for model files
         self.temp_dir = tempfile.TemporaryDirectory()
         
-        # Create model configuration
-        self.model_config = {
-            "type": "neural_network",
-            "architecture": [
-                {"type": "dense", "units": 10, "activation": "relu"},
-                {"type": "dense", "units": 1, "activation": "sigmoid"}
-            ],
-            "optimizer": "adam",
-            "loss": "binary_crossentropy"
-        }
-        
-        # Create a server instance
-        self.server = FederatedServer(self.model_config)
+        # Create a mock model
+        self.model = MagicMock()
         
         # Create mock client data
-        self.client_data = [
-            pd.DataFrame({
-                "feature1": np.random.normal(0, 1, 100),
-                "feature2": np.random.normal(0, 1, 100),
-                "target": np.random.randint(0, 2, 100)
-            }) for _ in range(3)
-        ]
+        self.client_data = {
+            "client1": pd.DataFrame({
+                "feature1": np.random.normal(0, 1, 10),
+                "feature2": np.random.normal(0, 1, 10),
+                "target": np.random.randint(0, 2, 10)
+            }),
+            "client2": pd.DataFrame({
+                "feature1": np.random.normal(0, 1, 10),
+                "feature2": np.random.normal(0, 1, 10),
+                "target": np.random.randint(0, 2, 10)
+            })
+        }
         
-        # Create client instances
-        self.clients = [
-            FederatedClient(data=data) for data in self.client_data
-        ]
-        
-        # Register clients with server
-        for client in self.clients:
-            self.server.register_client(client)
+        # Create a client data function
+        self.client_data_fn = lambda: self.client_data
     
     def tearDown(self):
         """Clean up temporary files."""
         self.temp_dir.cleanup()
     
-    def test_server_initialization(self):
-        """Test server initialization."""
-        server = FederatedServer(self.model_config)
-        
-        # Check that the server was initialized correctly
-        self.assertEqual(server.model_config, self.model_config)
-        self.assertEqual(server.aggregation_method, "federated_averaging")
-        self.assertEqual(len(server.clients), 0)
-        self.assertEqual(server.round, 0)
-    
-    def test_client_initialization(self):
-        """Test client initialization."""
-        data = self.client_data[0]
-        client = FederatedClient(data=data)
-        
-        # Check that the client was initialized correctly
-        self.assertEqual(client.data, data)
-        self.assertIsNone(client.local_model)
-        self.assertFalse(client.differential_privacy)
-    
-    def test_client_registration(self):
-        """Test client registration with server."""
-        server = FederatedServer(self.model_config)
-        client = FederatedClient()
-        
-        # Register client
-        client_id = server.register_client(client)
-        
-        # Check that client was registered
-        self.assertIn({"id": client_id, "client": client}, server.clients)
-        self.assertEqual(len(server.clients), 1)
-    
-    def test_model_broadcasting(self):
-        """Test broadcasting model to clients."""
-        # Broadcast model
-        num_clients = self.server.broadcast_model()
-        
-        # Check that all clients received the model
-        self.assertEqual(num_clients, len(self.clients))
-        for client in self.clients:
-            self.assertIsNotNone(client.local_model)
-            self.assertEqual(client.local_model["config"], self.model_config)
-    
-    def test_client_training(self):
-        """Test client local training."""
-        # Broadcast model to clients
-        self.server.broadcast_model()
-        
-        # Train local models
-        for client in self.clients:
-            metrics = client.train_local_model(epochs=2, batch_size=16)
+    def test_train_federated_pytorch(self):
+        """Test the train_federated function with PyTorch."""
+        # Setup required mocks
+        simulation_mock = MagicMock()
+        with patch.object(fl_mock.simulation, 'start_simulation', simulation_mock):
             
-            # Check that training was performed
-            self.assertIsNotNone(metrics)
-            self.assertEqual(metrics["epochs"], 2)
-            self.assertEqual(metrics["batch_size"], 16)
-            self.assertEqual(len(client.training_history), 1)
+            # Set up framework detection to return pytorch
+            with patch("secureml.federated._detect_framework", return_value="pytorch"):
+                with patch("secureml.federated._create_pytorch_client_fn") as mock_client_fn:
+                    with patch("secureml.federated._create_pytorch_server") as mock_server:
+                        # Run function
+                        result = train_federated(
+                            model=self.model,
+                            client_data_fn=self.client_data_fn,
+                            framework="pytorch"
+                        )
+                        
+                        # Assert correct functions were called
+                        mock_client_fn.assert_called_once()
+                        mock_server.assert_called_once()
+                        simulation_mock.assert_called_once()
+                        
+                        # Check that the model was returned
+                        self.assertEqual(result, self.model)
     
-    def test_collecting_updates(self):
-        """Test collecting updates from clients."""
-        # Broadcast model to clients
-        self.server.broadcast_model()
-        
-        # Train local models
-        for client in self.clients:
-            client.train_local_model()
-        
-        # Collect updates
-        updates = self.server.collect_updates()
-        
-        # Check that updates were collected
-        self.assertEqual(len(updates), len(self.clients))
-        for update in updates:
-            self.assertIn("config", update)
-            self.assertIn("weights", update)
+    def test_train_federated_tensorflow(self):
+        """Test the train_federated function with TensorFlow."""
+        # Setup required mocks
+        simulation_mock = MagicMock()
+        with patch.object(fl_mock.simulation, 'start_simulation', simulation_mock):
+            
+            # Set up framework detection to return tensorflow
+            with patch("secureml.federated._detect_framework", return_value="tensorflow"):
+                with patch("secureml.federated._create_tensorflow_client_fn") as mock_client_fn:
+                    with patch("secureml.federated._create_tensorflow_server") as mock_server:
+                        # Run function
+                        result = train_federated(
+                            model=self.model,
+                            client_data_fn=self.client_data_fn,
+                            framework="tensorflow"
+                        )
+                        
+                        # Assert correct functions were called
+                        mock_client_fn.assert_called_once()
+                        mock_server.assert_called_once()
+                        simulation_mock.assert_called_once()
+                        
+                        # Check that the model was returned
+                        self.assertEqual(result, self.model)
     
-    def test_aggregating_updates(self):
-        """Test aggregating updates from clients."""
-        # Broadcast model to clients
-        self.server.broadcast_model()
-        
-        # Train local models
-        for client in self.clients:
-            client.train_local_model()
-        
-        # Collect updates
-        updates = self.server.collect_updates()
-        
-        # Aggregate updates
-        updated_model = self.server.aggregate_updates(updates)
-        
-        # Check that model was updated
-        self.assertIsNotNone(updated_model)
-        self.assertIn("weights", updated_model)
-        self.assertIn("config", updated_model)
+    def test_train_federated_auto_detection(self):
+        """Test train_federated with auto framework detection."""
+        # Setup required mocks
+        simulation_mock = MagicMock()
+        with patch.object(fl_mock.simulation, 'start_simulation', simulation_mock):
+            
+            # Set up framework detection to return pytorch
+            with patch("secureml.federated._detect_framework", return_value="pytorch") as mock_detect:
+                with patch("secureml.federated._create_pytorch_client_fn"):
+                    with patch("secureml.federated._create_pytorch_server"):
+                        # Run function with auto framework detection
+                        train_federated(
+                            model=self.model,
+                            client_data_fn=self.client_data_fn,
+                            framework="auto"
+                        )
+                        
+                        # Check that framework detection was called
+                        mock_detect.assert_called_once_with(self.model)
     
-    def test_training_round(self):
-        """Test a complete training round."""
-        # Run one round of training
-        metrics = self.server.train_round()
-        
-        # Check that round was executed
-        self.assertEqual(self.server.round, 1)
-        self.assertEqual(metrics["round"], 1)
-        self.assertEqual(metrics["num_clients"], len(self.clients))
-        self.assertEqual(len(self.server.training_history), 1)
+    def test_train_federated_save_model(self):
+        """Test that train_federated saves the model when a path is provided."""
+        # Setup required mocks
+        simulation_mock = MagicMock()
+        with patch.object(fl_mock.simulation, 'start_simulation', simulation_mock):
+            
+            # Create a file path for saving the model
+            model_path = os.path.join(self.temp_dir.name, "model.pt")
+            
+            with patch("secureml.federated._detect_framework", return_value="pytorch"):
+                with patch("secureml.federated._create_pytorch_client_fn"):
+                    with patch("secureml.federated._create_pytorch_server"):
+                        with patch("secureml.federated._save_model") as mock_save:
+                            # Run function with model save path
+                            train_federated(
+                                model=self.model,
+                                client_data_fn=self.client_data_fn,
+                                framework="pytorch",
+                                model_save_path=model_path
+                            )
+                            
+                            # Check that save_model was called
+                            mock_save.assert_called_once_with(
+                                self.model, model_path, "pytorch"
+                            )
     
-    def test_multiple_training_rounds(self):
-        """Test multiple training rounds."""
-        # Run multiple rounds of training
-        num_rounds = 3
-        results = self.server.train(num_rounds)
-        
-        # Check that rounds were executed
-        self.assertEqual(self.server.round, num_rounds)
-        self.assertEqual(len(results), num_rounds)
-        self.assertEqual(len(self.server.training_history), num_rounds)
+    def test_train_federated_custom_config(self):
+        """Test train_federated with a custom config."""
+        # Setup required mocks
+        simulation_mock = MagicMock()
+        with patch.object(fl_mock.simulation, 'start_simulation', simulation_mock):
+            
+            # Create a custom config
+            config = FederatedConfig(
+                num_rounds=5,
+                fraction_fit=0.8,
+                min_fit_clients=3,
+                apply_differential_privacy=True
+            )
+            
+            with patch("secureml.federated._detect_framework", return_value="pytorch"):
+                with patch("secureml.federated._create_pytorch_client_fn") as mock_client_fn:
+                    with patch("secureml.federated._create_pytorch_server") as mock_server:
+                        # Run function with custom config
+                        train_federated(
+                            model=self.model,
+                            client_data_fn=self.client_data_fn,
+                            config=config,
+                            framework="pytorch"
+                        )
+                        
+                        # Check that the config was passed to the client_fn and server functions
+                        args, kwargs = mock_client_fn.call_args
+                        self.assertEqual(args[2], config)
+                        
+                        args, kwargs = mock_server.call_args
+                        self.assertEqual(args[1], config)
+                        
+                        # Check that the simulation was started with the correct number of rounds
+                        args, kwargs = simulation_mock.call_args
+                        self.assertEqual(kwargs["config"].num_rounds, 5)
+
+
+@patch("secureml.federated._HAS_FLOWER", True)
+class TestStartFederatedServer(unittest.TestCase):
+    """Test cases for the start_federated_server function."""
     
-    def test_saving_and_loading_model(self):
-        """Test saving and loading global model."""
-        # Run one round of training
-        self.server.train_round()
+    def setUp(self):
+        """Set up test environment."""
+        # Create a mock model
+        self.model = MagicMock()
+    
+    def test_start_federated_server_pytorch(self):
+        """Test start_federated_server with PyTorch."""
+        # Setup required mocks
+        server_mock = MagicMock()
+        with patch.object(fl_mock.server, 'start_server', server_mock):
+            
+            with patch("secureml.federated._detect_framework", return_value="pytorch"):
+                with patch("secureml.federated._create_pytorch_server") as mock_server:
+                    # Run function
+                    start_federated_server(
+                        model=self.model,
+                        framework="pytorch"
+                    )
+                    
+                    # Check that the server was created and started
+                    mock_server.assert_called_once()
+                    server_mock.assert_called_once()
+    
+    def test_start_federated_server_tensorflow(self):
+        """Test start_federated_server with TensorFlow."""
+        # Setup required mocks
+        server_mock = MagicMock()
+        with patch.object(fl_mock.server, 'start_server', server_mock):
+            
+            with patch("secureml.federated._detect_framework", return_value="tensorflow"):
+                with patch("secureml.federated._create_tensorflow_server") as mock_server:
+                    # Run function
+                    start_federated_server(
+                        model=self.model,
+                        framework="tensorflow"
+                    )
+                    
+                    # Check that the server was created and started
+                    mock_server.assert_called_once()
+                    server_mock.assert_called_once()
+    
+    def test_start_federated_server_custom_config(self):
+        """Test start_federated_server with custom config."""
+        # Setup required mocks
+        server_mock = MagicMock()
+        with patch.object(fl_mock.server, 'start_server', server_mock):
+            
+            # Create a custom config
+            config = FederatedConfig(
+                num_rounds=5,
+                server_address="localhost:8081",
+                use_secure_aggregation=True
+            )
+            
+            with patch("secureml.federated._detect_framework", return_value="pytorch"):
+                with patch("secureml.federated._create_pytorch_server") as mock_server:
+                    # Run function with custom config
+                    start_federated_server(
+                        model=self.model,
+                        config=config,
+                        framework="pytorch"
+                    )
+                    
+                    # Check that the server was created with the config
+                    mock_server.assert_called_once_with(self.model, config)
+                    
+                    # Check that the server was started with the correct address and config
+                    args, kwargs = server_mock.call_args
+                    self.assertEqual(kwargs["server_address"], "localhost:8081")
+                    self.assertEqual(kwargs["config"].num_rounds, 5)
+
+
+@patch("secureml.federated._HAS_FLOWER", True)
+class TestStartFederatedClient(unittest.TestCase):
+    """Test cases for the start_federated_client function."""
+    
+    def setUp(self):
+        """Set up test environment."""
+        # Create a mock model
+        self.model = MagicMock()
+        
+        # Create mock data
+        self.data = pd.DataFrame({
+            "feature1": np.random.normal(0, 1, 10),
+            "feature2": np.random.normal(0, 1, 10),
+            "target": np.random.randint(0, 2, 10)
+        })
+    
+    def test_start_federated_client_pytorch(self):
+        """Test start_federated_client with PyTorch."""
+        # Setup required mocks
+        client_mock = MagicMock()
+        with patch.object(fl_mock.client, 'start_client', client_mock):
+            
+            with patch("secureml.federated._detect_framework", return_value="pytorch"):
+                with patch("secureml.federated._create_pytorch_client") as mock_client:
+                    # Run function
+                    start_federated_client(
+                        model=self.model,
+                        data=self.data,
+                        server_address="localhost:8080",
+                        framework="pytorch"
+                    )
+                    
+                    # Check that the client was created and started
+                    mock_client.assert_called_once()
+                    client_mock.assert_called_once_with(
+                        server_address="localhost:8080",
+                        client=mock_client.return_value
+                    )
+    
+    def test_start_federated_client_tensorflow(self):
+        """Test start_federated_client with TensorFlow."""
+        # Setup required mocks
+        client_mock = MagicMock()
+        with patch.object(fl_mock.client, 'start_client', client_mock):
+            
+            with patch("secureml.federated._detect_framework", return_value="tensorflow"):
+                with patch("secureml.federated._create_tensorflow_client") as mock_client:
+                    # Run function
+                    start_federated_client(
+                        model=self.model,
+                        data=self.data,
+                        server_address="localhost:8080",
+                        framework="tensorflow"
+                    )
+                    
+                    # Check that the client was created and started
+                    mock_client.assert_called_once()
+                    client_mock.assert_called_once_with(
+                        server_address="localhost:8080",
+                        client=mock_client.return_value
+                    )
+    
+    def test_start_federated_client_with_differential_privacy(self):
+        """Test start_federated_client with differential privacy enabled."""
+        # Setup required mocks
+        client_mock = MagicMock()
+        with patch.object(fl_mock.client, 'start_client', client_mock):
+            
+            with patch("secureml.federated._detect_framework", return_value="pytorch"):
+                with patch("secureml.federated._create_pytorch_client") as mock_client:
+                    # Run function with differential privacy
+                    start_federated_client(
+                        model=self.model,
+                        data=self.data,
+                        server_address="localhost:8080",
+                        framework="pytorch",
+                        apply_differential_privacy=True,
+                        epsilon=0.5,
+                        delta=1e-6
+                    )
+                    
+                    # Check that the client was created with DP parameters
+                    mock_client.assert_called_once_with(
+                        self.model,
+                        self.data,
+                        apply_differential_privacy=True,
+                        epsilon=0.5,
+                        delta=1e-6
+                    )
+
+
+@patch("secureml.federated._HAS_PYTORCH", True)
+class TestSaveModel(unittest.TestCase):
+    """Test cases for the _save_model function."""
+    
+    def setUp(self):
+        """Set up test environment."""
+        # Create a temporary directory for model files
+        self.temp_dir = tempfile.TemporaryDirectory()
+        
+        # Create a mock model
+        self.model = MagicMock()
+    
+    def tearDown(self):
+        """Clean up temporary files."""
+        self.temp_dir.cleanup()
+    
+    def test_save_pytorch_model(self):
+        """Test saving a PyTorch model."""
+        # Create a file path for saving the model
+        model_path = os.path.join(self.temp_dir.name, "model.pt")
         
         # Save the model
-        model_path = os.path.join(self.temp_dir.name, "model.json")
-        saved_path = self.server.save_model(model_path)
-        
-        # Check that model was saved
-        self.assertTrue(os.path.exists(model_path))
-        
-        # Create a new server
-        new_server = FederatedServer(self.model_config)
-        
-        # Load the model
-        loaded_model = new_server.load_model(model_path)
-        
-        # Check that model was loaded
-        self.assertEqual(new_server.global_model["config"], self.server.global_model["config"])
-        self.assertEqual(len(new_server.global_model["weights"]), len(self.server.global_model["weights"]))
+        with patch("secureml.federated.torch.save") as mock_save:
+            _save_model(self.model, model_path, "pytorch")
+            
+            # Check that torch.save was called
+            mock_save.assert_called_once()
     
-    def test_differential_privacy(self):
-        """Test client with differential privacy."""
-        # Create a client with DP enabled
-        dp_client = FederatedClient(data=self.client_data[0], differential_privacy=True, dp_epsilon=0.5)
+    def test_save_tensorflow_model(self):
+        """Test saving a TensorFlow model."""
+        # Create a file path for saving the model
+        model_path = os.path.join(self.temp_dir.name, "model")
         
-        # Register with the server
-        self.server.register_client(dp_client)
+        # Save the model
+        with patch("secureml.federated._HAS_TENSORFLOW", True):
+            _save_model(self.model, model_path, "tensorflow")
+            
+            # Check that model.save was called
+            self.model.save.assert_called_once_with(model_path)
+    
+    def test_save_unknown_framework_model(self):
+        """Test that warning is issued for unknown frameworks."""
+        # Create a file path for saving the model
+        model_path = os.path.join(self.temp_dir.name, "model")
         
-        # Broadcast model
-        self.server.broadcast_model()
-        
-        # Train local model
-        metrics = dp_client.train_local_model()
-        
-        # Check that DP was enabled
-        self.assertTrue(metrics["dp_enabled"])
-        
-        # Run a round of training
-        self.server.train_round()
+        # Save the model with an unknown framework
+        with patch("secureml.federated.warnings.warn") as mock_warn:
+            _save_model(self.model, model_path, "unknown")
+            
+            # Check that a warning was issued
+            mock_warn.assert_called_once()
 
 
 # Add pytest-style tests
 @pytest.fixture
-def model_config():
-    """Create a model configuration fixture."""
-    return {
-        "type": "neural_network",
-        "architecture": [
-            {"type": "dense", "units": 10, "activation": "relu"},
-            {"type": "dense", "units": 1, "activation": "sigmoid"}
-        ],
-        "optimizer": "adam",
-        "loss": "binary_crossentropy"
+def mock_model():
+    """Create a mock model fixture."""
+    return MagicMock()
+
+
+@pytest.fixture
+def mock_data():
+    """Create mock data fixture."""
+    return pd.DataFrame({
+        "feature1": np.random.normal(0, 1, 10),
+        "feature2": np.random.normal(0, 1, 10),
+        "target": np.random.randint(0, 2, 10)
+    })
+
+
+@pytest.fixture
+def mock_client_data_fn():
+    """Create a mock client data function fixture."""
+    data = {
+        "client1": pd.DataFrame({
+            "feature1": np.random.normal(0, 1, 10),
+            "feature2": np.random.normal(0, 1, 10),
+            "target": np.random.randint(0, 2, 10)
+        }),
+        "client2": pd.DataFrame({
+            "feature1": np.random.normal(0, 1, 10),
+            "feature2": np.random.normal(0, 1, 10),
+            "target": np.random.randint(0, 2, 10)
+        })
     }
-
-
-@pytest.fixture
-def server(model_config):
-    """Create a federated server fixture."""
-    return FederatedServer(model_config)
-
-
-@pytest.fixture
-def client_data():
-    """Create client data fixtures."""
-    return [
-        pd.DataFrame({
-            "feature1": np.random.normal(0, 1, 100),
-            "feature2": np.random.normal(0, 1, 100),
-            "target": np.random.randint(0, 2, 100)
-        }) for _ in range(3)
-    ]
-
-
-@pytest.fixture
-def clients(client_data):
-    """Create client fixtures."""
-    return [FederatedClient(data=data) for data in client_data]
-
-
-@pytest.fixture
-def federated_setup(server, clients):
-    """Set up a complete federated learning environment."""
-    # Register clients with server
-    for client in clients:
-        server.register_client(client)
-    
-    # Return the setup
-    return {
-        "server": server,
-        "clients": clients
-    }
-
-
-def test_federated_round(federated_setup):
-    """Test a complete federated learning round using fixtures."""
-    server = federated_setup["server"]
-    
-    # Run a training round
-    metrics = server.train_round()
-    
-    # Check round results
-    assert server.round == 1
-    assert metrics["round"] == 1
-    assert metrics["num_clients"] == len(federated_setup["clients"])
-
-
-def test_federated_training(federated_setup, tmp_path):
-    """Test complete federated training process."""
-    server = federated_setup["server"]
-    
-    # Run multiple rounds of training
-    num_rounds = 3
-    results = server.train(num_rounds)
-    
-    # Check results
-    assert len(results) == num_rounds
-    assert server.round == num_rounds
-    
-    # Save model
-    model_path = tmp_path / "model.json"
-    server.save_model(str(model_path))
-    
-    # Verify file exists
-    assert model_path.exists()
+    return lambda: data
 
 
 @pytest.mark.parametrize(
-    "aggregation_method", 
-    ["federated_averaging", "federated_median", "secure_aggregation"]
+    "framework", 
+    ["pytorch", "tensorflow", "auto"]
 )
-def test_aggregation_methods(model_config, clients, aggregation_method):
-    """Test different aggregation methods."""
-    # Create server with specified aggregation method
-    server = FederatedServer(model_config, aggregation_method=aggregation_method)
+def test_train_federated_frameworks(mock_model, mock_client_data_fn, framework, monkeypatch):
+    """Test train_federated with different frameworks."""
+    # Setup mocks
+    simulation_mock = MagicMock()
+    monkeypatch.setattr("secureml.federated.fl.simulation.start_simulation", simulation_mock)
+    monkeypatch.setattr("secureml.federated._HAS_FLOWER", True)
     
-    # Register clients
-    for client in clients:
-        server.register_client(client)
+    # Mock framework detection
+    detect_mock = MagicMock(return_value="pytorch")
+    monkeypatch.setattr("secureml.federated._detect_framework", detect_mock)
     
-    # Run a training round
-    metrics = server.train_round()
+    # Mock client and server creation
+    client_fn_mock = MagicMock()
+    server_mock = MagicMock()
+    monkeypatch.setattr("secureml.federated._create_pytorch_client_fn", client_fn_mock)
+    monkeypatch.setattr("secureml.federated._create_pytorch_server", server_mock)
     
-    # Check that training was successful
-    assert server.round == 1
-    assert metrics["num_clients"] == len(clients)
+    # Run function
+    train_federated(
+        model=mock_model,
+        client_data_fn=mock_client_data_fn,
+        framework=framework
+    )
+    
+    # Check that simulation was started
+    assert simulation_mock.call_count == 1
+    
+    # If auto framework detection was used, check it was called
+    if framework == "auto":
+        assert detect_mock.call_count == 1
+        detect_mock.assert_called_with(mock_model)
+
+
+@pytest.mark.parametrize(
+    "differential_privacy,epsilon,delta", 
+    [
+        (False, 1.0, 1e-5),
+        (True, 0.5, 1e-6)
+    ]
+)
+def test_client_differential_privacy(mock_model, mock_data, differential_privacy, epsilon, delta, monkeypatch):
+    """Test client creation with different differential privacy settings."""
+    # Setup mocks
+    client_mock = MagicMock()
+    monkeypatch.setattr("secureml.federated.fl.client.start_client", client_mock)
+    monkeypatch.setattr("secureml.federated._HAS_FLOWER", True)
+    
+    # Mock client creation
+    client_instance_mock = MagicMock()
+    create_client_mock = MagicMock(return_value=client_instance_mock)
+    monkeypatch.setattr("secureml.federated._create_pytorch_client", create_client_mock)
+    monkeypatch.setattr("secureml.federated._detect_framework", MagicMock(return_value="pytorch"))
+    
+    # Run function
+    start_federated_client(
+        model=mock_model,
+        data=mock_data,
+        server_address="localhost:8080",
+        framework="pytorch",
+        apply_differential_privacy=differential_privacy,
+        epsilon=epsilon,
+        delta=delta
+    )
+    
+    # Check client was created with correct DP settings
+    create_client_mock.assert_called_once_with(
+        mock_model,
+        mock_data,
+        apply_differential_privacy=differential_privacy,
+        epsilon=epsilon,
+        delta=delta
+    )
+    
+    # Check client was started
+    client_mock.assert_called_once_with(
+        server_address="localhost:8080",
+        client=client_instance_mock
+    )
 
 
 if __name__ == "__main__":
