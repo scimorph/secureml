@@ -42,6 +42,7 @@ class TestAuditTrail(unittest.TestCase):
         self.assertIsNotNone(audit.operation_id)
         self.assertIsNotNone(audit.start_time)
         self.assertEqual(audit.log_dir, self.test_log_dir)
+        audit.close()
         
         # Check that a log file was created
         log_files = os.listdir(self.test_log_dir)
@@ -65,6 +66,7 @@ class TestAuditTrail(unittest.TestCase):
         self.assertIn("test_event", log_content)
         self.assertIn("test_key", log_content)
         self.assertIn("test_value", log_content)
+        audit.close()
     
     def test_log_data_access(self):
         """Test logging data access to the audit trail."""
@@ -96,6 +98,7 @@ class TestAuditTrail(unittest.TestCase):
         self.assertEqual(event["num_records"], 100)
         self.assertEqual(event["purpose"], "testing")
         self.assertEqual(event["user"], "test_user")
+        audit.close()
     
     def test_close(self):
         """Test closing an audit trail."""

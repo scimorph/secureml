@@ -19,12 +19,15 @@ _HAS_FLOWER = False
 _HAS_PYTORCH = False
 _HAS_TENSORFLOW = False
 
-# Importing Flower
-import flwr as fl
-from flwr.common import EvaluateIns, EvaluateRes, FitIns, FitRes, Parameters
-from flwr.server.client_proxy import ClientProxy
-print("Flower imported")
-_HAS_FLOWER = True
+# Try importing Flower
+try:
+    import flwr as fl
+    from flwr.common import EvaluateIns, EvaluateRes, FitIns, FitRes, Parameters
+    from flwr.server.client_proxy import ClientProxy
+    print("Flower imported")
+    _HAS_FLOWER = True
+except ImportError:
+    pass
 
 # Try importing PyTorch
 try:

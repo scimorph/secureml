@@ -13,24 +13,30 @@ class MockAnonymizationModule:
     @staticmethod
     def anonymize(data, method="k-anonymity", k=5, sensitive_columns=None, **kwargs):
         """Mock implementation of anonymize function"""
+        original_format_is_list = False
         if isinstance(data, pd.DataFrame):
             df = data.copy()
         else:
+            original_format_is_list = True
             df = pd.DataFrame(data)
             
         if sensitive_columns is None:
             sensitive_columns = MockAnonymizationModule._identify_sensitive_columns(df)
             
         if method == "k-anonymity":
-            return MockAnonymizationModule._apply_k_anonymity(df, sensitive_columns, k, **kwargs)
+            result = MockAnonymizationModule._apply_k_anonymity(df, sensitive_columns, k, **kwargs)
         elif method == "pseudonymization":
-            return MockAnonymizationModule._apply_pseudonymization(df, sensitive_columns, **kwargs)
+            result = MockAnonymizationModule._apply_pseudonymization(df, sensitive_columns, **kwargs)
         elif method == "data-masking":
-            return MockAnonymizationModule._apply_data_masking(df, sensitive_columns, **kwargs)
+            result = MockAnonymizationModule._apply_data_masking(df, sensitive_columns, **kwargs)
         elif method == "generalization":
-            return MockAnonymizationModule._apply_generalization(df, sensitive_columns, **kwargs)
+            result = MockAnonymizationModule._apply_generalization(df, sensitive_columns, **kwargs)
         else:
             raise ValueError(f"Unknown anonymization method: {method}")
+        
+        if original_format_is_list:
+            return result.to_dict("records")
+        return result
     
     @staticmethod
     def _identify_sensitive_columns(data):
@@ -72,10 +78,11 @@ class MockAnonymizationModule:
         df = data.copy()
         for col in sensitive_columns:
             if col in df.columns:
-                if df[col].dtype == object:  # String columns
-                    df[col] = df[col].astype(str).apply(
-                        lambda x: x[:2] + '*' * (len(x) - 4) + x[-2:] if len(x) > 4 else x
+                df[col] = df[col].apply(
+                    lambda x: x if pd.isna(x) else (
+                        str(x)[:2] + '*' * (len(str(x)) - 4) + str(x)[-2:] if len(str(x)) > 4 else str(x)
                     )
+                )
         return df
     
     @staticmethod
@@ -85,8 +92,12 @@ class MockAnonymizationModule:
         for col in sensitive_columns:
             if col in df.columns:
                 if pd.api.types.is_numeric_dtype(df[col]):
-                    # Round numeric values
-                    df[col] = (df[col] // 10) * 10
+                    # Generalize numeric values into ranges (e.g., [85000-95000))
+                    range_size = 10000  # Smaller range to ensure noticeable change
+                    df[col] = df[col].apply(
+                        lambda x: f"[{int(x // range_size * range_size)}-{int((x // range_size + 1) * range_size)})" 
+                        if not pd.isna(x) else x
+                    )
                 elif pd.api.types.is_string_dtype(df[col]):
                     # Truncate strings
                     df[col] = df[col].astype(str).apply(lambda x: x[0] + "..." if len(x) > 1 else x)
@@ -234,21 +245,25 @@ class TestAnonymization(unittest.TestCase):
     def test_anonymize_generalization(self):
         """Test generalization."""
         result = anonymize(
-            self.test_data, 
+            self.test_data,
             method="generalization",
             sensitive_columns=["income", "zip_code"]
         )
-        
-        # For numeric columns, we expect rounding to nearest 10
-        # So all incomes should be divisible by 10
+
+        # For numeric columns, we expect ranges like "[lower-upper)"
+        import re
+        range_pattern = r"^\[\d+-\d+\)$"  # Matches "[80000-90000)"
         for income in result["income"]:
-            self.assertEqual(income % 10, 0, "Generalized income should be rounded to nearest 10")
-        
+            self.assertTrue(
+                re.match(range_pattern, str(income)),
+                f"Generalized income '{income}' should be a range like '[lower-upper)'"
+            )
+
         # For string columns like zip_code, we expect the first character + "..."
         for zip_code in result["zip_code"]:
             self.assertTrue(
                 zip_code.endswith("...") or len(zip_code) <= 1,
-                f"Generalized zip code '{zip_code}' should end with '...'"
+                f"Generalized zip code '{zip_code}' should end with '...' or be a single character"
             )
 
     def test_anonymize_list_input(self):
