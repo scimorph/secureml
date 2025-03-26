@@ -31,6 +31,7 @@ def generate_synthetic_data(
     method: str = "simple",
     sensitive_columns: Optional[List[str]] = None,
     seed: Optional[int] = None,
+    sensitivity_detection: Optional[Dict[str, Any]] = None,
     **kwargs: Any,
 ) -> pd.DataFrame:
     """
@@ -43,6 +44,10 @@ def generate_synthetic_data(
                'sdv-ctgan', 'sdv-tvae', 'gan', or 'copula'
         sensitive_columns: Columns that contain sensitive data and need special handling
         seed: Random seed for reproducibility
+        sensitivity_detection: Configuration for sensitive column detection:
+            - sample_size: Number of rows to sample (default: 100)
+            - confidence_threshold: Minimum confidence score (default: 0.5)
+            - auto_detect: Whether to auto-detect sensitive columns if none provided (default: True)
         **kwargs: Additional parameters for specific generation methods
 
     Returns:
@@ -80,10 +85,22 @@ def generate_synthetic_data(
     else:
         # Template is a DataFrame
         template_df = template.copy()
+    
+    # Configure sensitivity detection
+    sensitivity_config = sensitivity_detection or {}
+    sample_size = sensitivity_config.get("sample_size", 100)
+    confidence_threshold = sensitivity_config.get("confidence_threshold", 0.5)
+    auto_detect = sensitivity_config.get("auto_detect", True)
         
-    # If no sensitive columns specified, try to identify them
-    if sensitive_columns is None:
-        sensitive_columns = _identify_sensitive_columns(template_df)
+    # If no sensitive columns specified and auto-detect is enabled, try to identify them
+    if sensitive_columns is None and auto_detect:
+        sensitive_columns = _identify_sensitive_columns(
+            template_df, 
+            sample_size=sample_size,
+            confidence_threshold=confidence_threshold
+        )
+    elif sensitive_columns is None:
+        sensitive_columns = []
         
     # Check if SDV methods are requested but SDV is not available
     sdv_methods = ["sdv-copula", "sdv-ctgan", "sdv-tvae"]
@@ -142,31 +159,218 @@ def generate_synthetic_data(
         )
 
 
-def _identify_sensitive_columns(data: pd.DataFrame) -> List[str]:
+def _identify_sensitive_columns(
+    data: pd.DataFrame, 
+    sample_size: int = 100, 
+    confidence_threshold: float = 0.5
+) -> List[str]:
     """
-    Identify columns that likely contain sensitive data.
-    
-    This is a simplified version - in a real implementation, this would be 
-    more sophisticated.
+    Identify columns that likely contain sensitive data by analyzing both column names
+    and data content.
     
     Args:
         data: The dataset to analyze
+        sample_size: Number of sample values to check from each column
+        confidence_threshold: Minimum confidence score (0.0-1.0) to classify a column as sensitive
         
     Returns:
         A list of column names that likely contain sensitive data
     """
-    sensitive_patterns = [
-        "name", "email", "address", "phone", "social", "ssn", "birth", "gender",
-        "race", "ethnicity", "religion", "politics", "income", "salary", "credit",
-        "account", "password", "health", "medical", "diagnosis", "treatment"
-    ]
+    import re
     
-    sensitive_columns = []
+    # Define patterns by category with regex patterns and keywords
+    sensitive_patterns = {
+        "personal_identifiers": {
+            "name": {
+                "keywords": ["name", "fullname", "firstname", "lastname", "username", "surname"],
+                "regex": r"^[A-Z][a-z]+(?: [A-Z][a-z]+)+$",  # Simple name pattern
+                "weight": 0.8
+            },
+            "email": {
+                "keywords": ["email", "e-mail", "mail"],
+                "regex": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
+                "weight": 0.9
+            },
+            "phone": {
+                "keywords": ["phone", "telephone", "mobile", "cell", "contact"],
+                "regex": r"(?:\+\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}",
+                "weight": 0.9
+            },
+            "address": {
+                "keywords": ["address", "street", "avenue", "road", "location", "city", "state", "zip", "postal"],
+                "regex": r"\d+\s+[A-Za-z\s]+(?:street|st|avenue|ave|road|rd|boulevard|blvd)",
+                "weight": 0.7
+            },
+            "id": {
+                "keywords": ["id", "identifier", "uuid", "guid"],
+                "regex": r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                "weight": 0.5  # Lower weight as IDs might be non-sensitive
+            },
+            "ssn": {
+                "keywords": ["ssn", "social", "security", "national id", "nationalid"],
+                "regex": r"\d{3}-\d{2}-\d{4}",
+                "weight": 1.0  # Maximum weight as SSNs are highly sensitive
+            }
+        },
+        "demographic_data": {
+            "gender": {
+                "keywords": ["gender", "sex"],
+                "regex": r"^(?:m|f|male|female|man|woman|non-binary|nonbinary|nb|other)$",
+                "weight": 0.7
+            },
+            "race": {
+                "keywords": ["race", "ethnicity", "ethnic"],
+                "regex": r"^(?:caucasian|white|black|african|asian|hispanic|latino|native|indigenous|pacific|mixed|other)$",
+                "weight": 0.9
+            },
+            "age": {
+                "keywords": ["age", "birthday", "birth", "dob", "date of birth"],
+                "regex": r"^(?:\d{1,3}|(?:19|20)\d{2}-\d{1,2}-\d{1,2})$",
+                "weight": 0.6
+            },
+            "nationality": {
+                "keywords": ["nationality", "citizenship", "country", "nation"],
+                "regex": None,  # No specific regex as country names vary widely
+                "weight": 0.6
+            }
+        },
+        "financial_data": {
+            "credit_card": {
+                "keywords": ["credit", "card", "cc", "creditcard", "payment"],
+                "regex": r"\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}",
+                "weight": 1.0
+            },
+            "account": {
+                "keywords": ["account", "bank", "routing", "iban", "swift"],
+                "regex": r"\d{8,17}",  # Simple account number pattern
+                "weight": 0.9
+            },
+            "income": {
+                "keywords": ["income", "salary", "wage", "earnings", "compensation", "pay"],
+                "regex": r"^\$?\d{1,3}(?:,\d{3})*(?:\.\d{2})?$",  # Money amount pattern
+                "weight": 0.8
+            },
+            "net_worth": {
+                "keywords": ["worth", "asset", "wealth", "equity", "portfolio"],
+                "regex": None,
+                "weight": 0.8
+            }
+        },
+        "health_data": {
+            "medical_condition": {
+                "keywords": ["condition", "disease", "diagnosis", "illness", "health", "medical"],
+                "regex": None,
+                "weight": 0.9
+            },
+            "medication": {
+                "keywords": ["medication", "drug", "prescription", "medicine", "treatment"],
+                "regex": None,
+                "weight": 0.9
+            },
+            "disability": {
+                "keywords": ["disability", "disabled", "handicap", "impairment"],
+                "regex": None,
+                "weight": 0.9
+            },
+            "insurance": {
+                "keywords": ["insurance", "coverage", "policy", "health insurance"],
+                "regex": None,
+                "weight": 0.7
+            }
+        },
+        "access_credentials": {
+            "password": {
+                "keywords": ["password", "pwd", "passcode", "pin", "secret"],
+                "regex": r"^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*#?&]{8,}$",  # Common password pattern
+                "weight": 1.0
+            },
+            "api_key": {
+                "keywords": ["api", "key", "token", "secret", "auth"],
+                "regex": r"[A-Za-z0-9_-]{20,}",  # Long alphanumeric strings
+                "weight": 0.9
+            }
+        }
+    }
+    
+    # Results dictionary to store confidence scores for each column
+    results = {}
+    
+    # Step 1: Analyze column names
     for col in data.columns:
         col_lower = col.lower()
-        if any(pattern in col_lower for pattern in sensitive_patterns):
+        results[col] = {'name_score': 0, 'data_score': 0, 'total_score': 0}
+        
+        # Check column name against sensitive patterns
+        for category, patterns in sensitive_patterns.items():
+            for data_type, pattern_info in patterns.items():
+                # Check if any keyword matches the column name
+                if any(keyword in col_lower for keyword in pattern_info["keywords"]):
+                    results[col]['name_score'] = pattern_info["weight"]
+                    results[col]['category'] = category
+                    results[col]['type'] = data_type
+                    break
+    
+    # Step 2: Analyze data content if possible
+    # Sample the data to avoid performance issues with large datasets
+    sample_rows = min(sample_size, len(data))
+    if sample_rows > 0:
+        for col in data.columns:
+            # Skip numeric columns for regex checks
+            if pd.api.types.is_numeric_dtype(data[col]):
+                continue
+                
+            # Get sample values as strings for analysis
+            try:
+                # Sample some non-null values
+                sample_values = data[col].dropna().astype(str).sample(
+                    min(sample_rows, data[col].count())
+                ).tolist()
+                
+                if not sample_values:
+                    continue
+                
+                # Check sample values against regex patterns
+                for category, patterns in sensitive_patterns.items():
+                    for data_type, pattern_info in patterns.items():
+                        if pattern_info["regex"] is None:
+                            continue
+                            
+                        # Calculate what percentage of samples match the regex
+                        matches = 0
+                        regex = re.compile(pattern_info["regex"], re.IGNORECASE)
+                        for value in sample_values:
+                            if regex.search(value):
+                                matches += 1
+                                
+                        match_ratio = matches / len(sample_values) if sample_values else 0
+                        if match_ratio > 0.3:  # If more than 30% match the pattern
+                            # Update score if higher than current score
+                            data_score = match_ratio * pattern_info["weight"]
+                            if data_score > results[col].get('data_score', 0):
+                                results[col]['data_score'] = data_score
+                                # Only update category if not already set by name
+                                if 'category' not in results[col]:
+                                    results[col]['category'] = category
+                                    results[col]['type'] = data_type
+            except Exception:
+                # Skip columns that cannot be analyzed
+                continue
+    
+    # Step 3: Calculate total scores and filter columns
+    sensitive_columns = []
+    for col, scores in results.items():
+        # Combine name and data scores (with data having higher priority)
+        name_weight = 0.4  # Column name is less reliable than content
+        data_weight = 0.6  # Content is more reliable than name
+        
+        total_score = (scores.get('name_score', 0) * name_weight + 
+                       scores.get('data_score', 0) * data_weight)
+        scores['total_score'] = total_score
+        
+        # Add columns that meet the confidence threshold
+        if total_score >= confidence_threshold:
             sensitive_columns.append(col)
-            
+    
     return sensitive_columns
 
 

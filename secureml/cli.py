@@ -28,6 +28,9 @@ from secureml.isolated_environments.tf_privacy import (
     is_env_valid
 )
 
+# For sensitive column detection in the CLI
+from secureml.synthetic import _identify_sensitive_columns
+
 
 @click.group()
 @click.version_option()
@@ -270,12 +273,39 @@ def synthetic():
     help="Sensitive columns to handle specially",
 )
 @click.option(
+    "--auto-detect-sensitive",
+    is_flag=True,
+    help="Automatically detect sensitive columns if none specified",
+)
+@click.option(
+    "--sensitivity-confidence",
+    type=float,
+    default=0.5,
+    help="Confidence threshold for sensitive column detection (0.0-1.0)",
+)
+@click.option(
+    "--sensitivity-sample-size",
+    type=int,
+    default=100,
+    help="Number of sample rows to examine for sensitive data detection",
+)
+@click.option(
     "--format",
     type=click.Choice(["csv", "json", "parquet"]),
     default="csv",
     help="Output file format (default: csv)",
 )
-def generate_data(input_file, output_file, method, samples, sensitive, format):
+def generate_data(
+    input_file, 
+    output_file, 
+    method, 
+    samples, 
+    sensitive, 
+    auto_detect_sensitive, 
+    sensitivity_confidence, 
+    sensitivity_sample_size,
+    format
+):
     """Generate synthetic data based on a real dataset.
     
     This command creates synthetic data that has similar statistical properties
@@ -284,6 +314,11 @@ def generate_data(input_file, output_file, method, samples, sensitive, format):
     Example:
         secureml synthetic generate real_data.csv synthetic_data.csv \\
         --method sdv-copula --samples 5000
+        
+    Advanced sensitive column detection:
+        secureml synthetic generate real_data.csv synthetic_data.csv \\
+        --auto-detect-sensitive --sensitivity-confidence 0.7 \\
+        --sensitivity-sample-size 200
     """
     click.echo(f"Reading template data from {input_file}...")
     
@@ -301,6 +336,13 @@ def generate_data(input_file, output_file, method, samples, sensitive, format):
         )
         data = pd.read_csv(input_file)
     
+    # Configure sensitivity detection
+    sensitivity_detection = {
+        "auto_detect": sensitive == () or auto_detect_sensitive,
+        "confidence_threshold": sensitivity_confidence,
+        "sample_size": sensitivity_sample_size
+    }
+    
     click.echo(
         f"Generating {samples} synthetic samples using {method} method..."
     )
@@ -310,7 +352,8 @@ def generate_data(input_file, output_file, method, samples, sensitive, format):
         template=data,
         num_samples=samples,
         method=method,
-        sensitive_columns=list(sensitive) if sensitive else None
+        sensitive_columns=list(sensitive) if sensitive else None,
+        sensitivity_detection=sensitivity_detection
     )
     
     # Save output in the requested format
@@ -322,6 +365,21 @@ def generate_data(input_file, output_file, method, samples, sensitive, format):
         synthetic_data.to_parquet(output_file, index=False)
     
     click.echo(f"Synthetic data saved to {output_file}")
+    
+    # If auto-detection was used, show which columns were detected as sensitive
+    if sensitivity_detection["auto_detect"] and not sensitive:
+        detected_cols = _identify_sensitive_columns(
+            data, 
+            sample_size=sensitivity_sample_size,
+            confidence_threshold=sensitivity_confidence
+        )
+        if detected_cols:
+            click.echo("\nDetected sensitive columns:")
+            for col in detected_cols:
+                click.echo(f"- {col}")
+        else:
+            click.echo("\nNo sensitive columns were detected with the current confidence threshold.")
+            click.echo(f"Try lowering the confidence threshold (current: {sensitivity_confidence}).")
 
 
 @cli.group()

@@ -121,6 +121,13 @@ secureml synthetic generate real_data.csv synthetic_data.csv \
   --method sdv-copula \
   --samples 5000 \
   --sensitive name --sensitive email
+
+# Use automatic sensitive data detection with custom parameters
+secureml synthetic generate real_data.csv synthetic_data.csv \
+  --method sdv-copula \
+  --auto-detect-sensitive \
+  --sensitivity-confidence 0.7 \
+  --sensitivity-sample-size 200
 ```
 
 #### Working with Regulation Presets
@@ -541,6 +548,28 @@ constrained_synthetic = generate_synthetic_data(
     method="sdv-copula",
     constraints=constraints
 )
+
+# Use automatic sensitive data detection with custom parameters
+auto_detected_synthetic = generate_synthetic_data(
+    template=real_data,
+    num_samples=1000,
+    method="sdv-copula",
+    sensitivity_detection={
+        "auto_detect": True,
+        "confidence_threshold": 0.7,  # Higher confidence threshold for stricter detection
+        "sample_size": 200  # Use more samples for better detection accuracy
+    }
+)
+
+# You can check which columns were detected as sensitive
+from secureml.synthetic import _identify_sensitive_columns
+
+detected_sensitive_columns = _identify_sensitive_columns(
+    real_data,
+    sample_size=200,
+    confidence_threshold=0.7
+)
+print("Detected sensitive columns:", detected_sensitive_columns)
 ```
 
 #### Legacy Synthesizer (For backward compatibility)
