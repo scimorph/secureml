@@ -146,17 +146,64 @@ SecureML uses isolated virtual environments to manage dependencies with conflict
 
 When you use TensorFlow Privacy functionality through SecureML, the library automatically creates and manages a separate virtual environment for this purpose. The first time you use TensorFlow Privacy, there might be a delay as SecureML sets up this environment.
 
-To pre-setup the TensorFlow Privacy environment, run:
+#### Managing Isolated Environments
+
+SecureML provides CLI commands to manage isolated environments:
 
 ```bash
+# Set up the TensorFlow Privacy environment in advance
 secureml environments setup-tf-privacy
-```
 
-To check the status of isolated environments:
+# Force recreation of the environment (useful for troubleshooting)
+secureml environments setup-tf-privacy --force
 
-```bash
+# Check the status of isolated environments
 secureml environments info
 ```
+
+#### How Isolated Environments Work
+
+1. **Automatic Management**: When you use functionality that requires TensorFlow Privacy, SecureML automatically creates and manages an isolated Python virtual environment.
+
+2. **Location**: The environment is created at `~/.secureml/tf_privacy_venv` by default.
+
+3. **Communication**: SecureML uses a secure, serialized JSON-based communication protocol to transfer data and model information between environments.
+
+4. **Dependencies**: The isolated environment includes all necessary dependencies like TensorFlow, TensorFlow Privacy, NumPy, and Pandas.
+
+#### Using TensorFlow Privacy in Your Code
+
+When you use the `differentially_private_train` function with the "tensorflow" framework, SecureML automatically handles the transition to the isolated environment:
+
+```python
+from secureml import privacy
+import tensorflow as tf
+
+# Create a model
+model = tf.keras.Sequential([
+    tf.keras.layers.Dense(64, activation='relu', input_shape=(10,)),
+    tf.keras.layers.Dense(1, activation='sigmoid')
+])
+
+model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
+# Train with differential privacy
+private_model = privacy.differentially_private_train(
+    model=model,
+    data=training_data,
+    epsilon=1.0,
+    delta=1e-5,
+    epochs=10,
+    batch_size=32,
+    validation_split=0.2,
+    framework="tensorflow"
+)
+
+# The model is trained with differential privacy guarantees
+predictions = private_model.predict(test_data)
+```
+
+The training happens in the isolated environment while seamlessly returning the trained model to your main environment.
 
 ### Compliance Checking with Regulation Presets
 

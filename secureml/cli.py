@@ -10,6 +10,9 @@ import json
 import pandas as pd
 import yaml
 from pathlib import Path
+import sys
+import os
+import shutil
 
 from secureml import (
     anonymize,
@@ -19,7 +22,11 @@ from secureml import (
     load_preset,
 )
 
-from secureml.isolated_environments.tf_privacy import create_environment, get_env_path
+from secureml.isolated_environments.tf_privacy import (
+    setup_tf_privacy_environment,
+    get_env_path,
+    is_env_valid
+)
 
 
 @click.group()
@@ -402,18 +409,36 @@ def environments():
 def setup_tf_privacy(force):
     """Set up the isolated environment for TensorFlow Privacy."""
     click.echo("Setting up TensorFlow Privacy isolated environment...")
-    env_path = create_environment(force=force)
-    click.echo(f"Environment created at: {env_path}")
+    try:
+        if force:
+            # If force flag is set, we need to delete the existing environment first
+            venv_path = get_env_path()
+            if os.path.exists(venv_path):
+                click.echo(f"Removing existing environment at {venv_path}...")
+                shutil.rmtree(venv_path, ignore_errors=True)
+        
+        # Set up the environment
+        setup_tf_privacy_environment()
+        venv_path = get_env_path()
+        click.echo(f"Environment created at: {venv_path}")
+    except RuntimeError as e:
+        click.echo(f"Error: {str(e)}", err=True)
+        sys.exit(1)
 
 
 @environments.command("info")
 def environment_info():
     """Show information about isolated environments."""
-    tf_privacy_path = get_env_path()
-    if tf_privacy_path.exists():
-        click.echo(f"TensorFlow Privacy environment: {tf_privacy_path} (Installed)")
+    # Get the path to the TensorFlow Privacy environment
+    venv_path = get_env_path()
+    # Check if it's valid
+    valid = is_env_valid()
+    
+    if valid:
+        click.echo(f"TensorFlow Privacy environment: {venv_path} (Installed and valid)")
     else:
-        click.echo(f"TensorFlow Privacy environment: {tf_privacy_path} (Not installed)")
+        click.echo(f"TensorFlow Privacy environment: {venv_path} (Not properly installed)")
+        click.echo("Run 'secureml environments setup-tf-privacy' to set up the environment")
 
 
 if __name__ == "__main__":

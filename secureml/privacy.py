@@ -393,35 +393,115 @@ def _train_with_tf_privacy(
 
     Raises:
         RuntimeError: If there's an error when running the function in the isolated environment
+        ImportError: If TensorFlow is not installed in the main environment
     """
-    # Prepare the model and data for serialization
-    # Note: For a complete solution, you would need to properly serialize and deserialize 
-    # the TensorFlow model, but this is just a sketch of the approach
+    try:
+        import tensorflow as tf
+        import json
+        import tempfile
+        import os
+    except ImportError:
+        raise ImportError(
+            "TensorFlow is required but not installed. "
+            "Please install it with 'pip install tensorflow'."
+        )
     
-    # Convert data to a serializable format
-    if isinstance(data, pd.DataFrame):
-        data_dict = data.to_dict()
-    elif isinstance(data, np.ndarray):
-        data_dict = {"array": data.tolist()}
-    else:
-        raise ValueError(f"Unsupported data type: {type(data)}")
+    # Extract training parameters from kwargs to match the PyTorch implementation
+    batch_size = kwargs.get("batch_size", 64)
+    epochs = kwargs.get("epochs", 10)
+    learning_rate = kwargs.get("learning_rate", 0.001)
+    validation_split = kwargs.get("validation_split", 0.2)
+    shuffle = kwargs.get("shuffle", True)
+    verbose = kwargs.get("verbose", True)
+    early_stopping_patience = kwargs.get("early_stopping_patience", 0)
     
-    # Prepare arguments for the isolated function
-    args = {
-        "model_config": model.get_config(),
-        "data": data_dict,
-        "epsilon": epsilon,
-        "delta": delta,
-        "noise_multiplier": noise_multiplier,
-        "max_grad_norm": max_grad_norm,
-        **kwargs
-    }
-    
-    # Run the function in the isolated environment
-    result = run_tf_privacy_function("secureml.isolated_environments.tf_privacy_trainer.train", args)
-    
-    # Deserialize the result and update the model
-    # This is a simplified version - in reality, you would need to load the model weights
-    # from the result and apply them to the original model
-    
+    # Create a temporary directory for model and data exchange
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Save the model architecture and weights
+        model_json_path = os.path.join(temp_dir, "model_architecture.json")
+        weights_path = os.path.join(temp_dir, "model_weights.h5")
+        final_weights_path = os.path.join(temp_dir, "final_weights.h5")
+        
+        # Serialize model architecture to JSON
+        model_json = model.to_json()
+        with open(model_json_path, "w") as json_file:
+            json_file.write(model_json)
+        
+        # Save model weights
+        model.save_weights(weights_path)
+        
+        # Prepare data
+        if isinstance(data, pd.DataFrame):
+            data_path = os.path.join(temp_dir, "data.csv")
+            data.to_csv(data_path, index=False)
+            data_type = "dataframe"
+        else:  # numpy array
+            data_path = os.path.join(temp_dir, "data.npy")
+            np.save(data_path, data)
+            data_type = "numpy"
+        
+        # Prepare metadata for target column
+        target_column = kwargs.get("target_column")
+        metadata = {
+            "target_column": target_column,
+            "data_type": data_type,
+            "model_architecture_path": model_json_path,
+            "weights_path": weights_path,
+            "final_weights_path": final_weights_path,
+            "batch_size": batch_size,
+            "epochs": epochs,
+            "learning_rate": learning_rate,
+            "validation_split": validation_split,
+            "shuffle": shuffle,
+            "verbose": verbose,
+            "early_stopping_patience": early_stopping_patience,
+            "optimizer": kwargs.get("optimizer", "adam"),
+            "loss": kwargs.get("loss", "sparse_categorical_crossentropy"),
+            "metrics": kwargs.get("metrics", ["accuracy"]),
+            "epsilon": epsilon,
+            "delta": delta,
+            "noise_multiplier": noise_multiplier,
+            "max_grad_norm": max_grad_norm
+        }
+        
+        # Save metadata
+        metadata_path = os.path.join(temp_dir, "metadata.json")
+        with open(metadata_path, "w") as f:
+            json.dump(metadata, f)
+        
+        # Run the training function in the isolated environment
+        if verbose:
+            print("Starting TensorFlow Privacy training in isolated environment...")
+        
+        result = run_tf_privacy_function(
+            "secureml.isolated_environments.tf_privacy_trainer.train_model",
+            {
+                "metadata_path": metadata_path,
+                "data_path": data_path
+            }
+        )
+        
+        # Check if training was successful
+        if not result.get("success", False):
+            error_message = result.get("error", "Unknown error in isolated environment")
+            raise RuntimeError(f"TensorFlow Privacy training failed: {error_message}")
+        
+        # Load the trained weights back into the original model
+        if os.path.exists(final_weights_path):
+            model.load_weights(final_weights_path)
+            
+            # Print training metrics if available and verbose mode is on
+            if verbose and "metrics" in result:
+                metrics = result["metrics"]
+                print("\nTraining Results:")
+                for key, value in metrics.items():
+                    print(f"  {key}: {value}")
+                
+                # Print privacy budget spent
+                if "privacy_spent" in result:
+                    privacy = result["privacy_spent"]
+                    print(f"Privacy budget spent (ε = {privacy['epsilon']:.4f}, δ = {privacy['delta']})")
+        else:
+            raise RuntimeError("Training completed but model weights file not found")
+            
     return model 

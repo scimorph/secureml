@@ -1,114 +1,215 @@
 """
-TensorFlow Privacy trainer functionality to be run in the isolated environment.
+TensorFlow Privacy training implementation for isolated environment.
 
-This module contains functions that will run in the isolated tensorflow-privacy environment.
+This module contains functions for training TensorFlow models with differential privacy
+in an isolated environment to avoid dependency conflicts.
 """
 
-from typing import Any, Dict, Union
-
+import os
+import json
 import numpy as np
 import pandas as pd
+from typing import Any, Dict, Optional, Tuple, Union
 
 
-def train(
-    model_config: Dict[str, Any],
-    data: Dict[str, Any],
-    epsilon: float,
-    delta: float,
-    noise_multiplier: Union[float, None],
-    max_grad_norm: float,
-    **kwargs: Any
-) -> Dict[str, Any]:
+def train_model(metadata_path: str, data_path: str) -> Dict[str, Any]:
     """
-    Train a TensorFlow model with differential privacy using TensorFlow Privacy.
-    
-    This function runs in the isolated environment with tensorflow-privacy installed.
+    Train a TensorFlow model with differential privacy.
     
     Args:
-        model_config: The serialized TensorFlow model configuration
-        data: The serialized training data
-        epsilon: Privacy budget
-        delta: Privacy delta
-        noise_multiplier: Noise multiplier for privacy
-        max_grad_norm: Maximum gradient norm for clipping
-        **kwargs: Additional training parameters
+        metadata_path: Path to the JSON file containing training metadata
+        data_path: Path to the data file (CSV for DataFrame, NPY for NumPy array)
         
     Returns:
-        A dictionary with the trained model weights and training metrics
+        Dictionary containing training results and status
     """
-    import tensorflow as tf
-    from tensorflow_privacy.privacy.optimizers.dp_optimizer import DPGradientDescentGaussianOptimizer
-    
-    # Deserialize the data
-    if "array" in data:
-        # It was a numpy array
-        train_data = np.array(data["array"])
-    else:
-        # It was a pandas DataFrame
-        train_data = pd.DataFrame(data)
-        train_data = tf.convert_to_tensor(train_data.values, dtype=tf.float32)
-    
-    # Recreate the model from its config
-    # For a simple model:
     try:
-        model = tf.keras.models.model_from_config(model_config)
-    except:
-        # For a more complex model, you might need additional logic:
-        # This is just a placeholder for demonstration
-        input_shape = train_data.shape[1]
-        model = tf.keras.Sequential([
-            tf.keras.layers.Dense(64, activation='relu', input_shape=(input_shape,)),
-            tf.keras.layers.Dense(32, activation='relu'),
-            tf.keras.layers.Dense(1)
-        ])
-    
-    # Calculate the parameters for DP-SGD
-    learning_rate = kwargs.get("learning_rate", 0.001)
-    batch_size = kwargs.get("batch_size", 32)
-    microbatches = kwargs.get("microbatches", 1)
-    epochs = kwargs.get("epochs", 10)
-    
-    # Create the DP optimizer
-    optimizer = DPGradientDescentGaussianOptimizer(
-        l2_norm_clip=max_grad_norm,
-        noise_multiplier=noise_multiplier or 1.0,  # Use provided or default
-        num_microbatches=microbatches,
-        learning_rate=learning_rate,
-    )
-    
-    # Compile the model with the DP optimizer
-    model.compile(
-        optimizer=optimizer,
-        loss=kwargs.get("loss", "mse"),
-        metrics=kwargs.get("metrics", ["accuracy"]),
-    )
-    
-    # Prepare the target data if provided
-    target_data = kwargs.get("target_data")
-    if target_data is not None:
-        if isinstance(target_data, dict) and "array" in target_data:
-            target_data = np.array(target_data["array"])
+        # Import TensorFlow and TensorFlow Privacy
+        import tensorflow as tf
+        from tensorflow_privacy.privacy.optimizers.dp_optimizer_keras import DPKerasSGDOptimizer
+        from tensorflow_privacy.privacy.analysis.compute_dp_sgd_privacy import compute_dp_sgd_privacy
         
-        # Train the model with separate features and targets
-        history = model.fit(
-            train_data,
-            target_data,
-            epochs=epochs,
-            batch_size=batch_size,
-            verbose=kwargs.get("verbose", 1),
+        # Load metadata
+        with open(metadata_path, "r") as f:
+            metadata = json.load(f)
+        
+        # Extract parameters from metadata
+        model_architecture_path = metadata["model_architecture_path"]
+        weights_path = metadata["weights_path"]
+        final_weights_path = metadata["final_weights_path"]
+        data_type = metadata["data_type"]
+        target_column = metadata["target_column"]
+        batch_size = metadata["batch_size"]
+        epochs = metadata["epochs"]
+        learning_rate = metadata["learning_rate"]
+        validation_split = metadata["validation_split"]
+        shuffle = metadata["shuffle"]
+        verbose = metadata["verbose"]
+        early_stopping_patience = metadata["early_stopping_patience"]
+        optimizer_name = metadata["optimizer"]
+        loss = metadata["loss"]
+        metrics = metadata["metrics"]
+        epsilon = metadata["epsilon"]
+        delta = metadata["delta"]
+        noise_multiplier = metadata["noise_multiplier"]
+        max_grad_norm = metadata["max_grad_norm"]
+        
+        # Load data
+        if data_type == "dataframe":
+            data = pd.read_csv(data_path)
+            # Extract features and target
+            if target_column is not None and target_column in data.columns:
+                x = data.drop(columns=[target_column]).values
+                y = data[target_column].values
+            else:
+                # Assume last column is the target
+                x = data.iloc[:, :-1].values
+                y = data.iloc[:, -1].values
+        else:  # numpy array
+            data = np.load(data_path)
+            # Assume last column is the target
+            x = data[:, :-1]
+            y = data[:, -1]
+        
+        # Load model architecture
+        with open(model_architecture_path, "r") as json_file:
+            model_json = json_file.read()
+        
+        model = tf.keras.models.model_from_json(model_json)
+        
+        # Load initial weights
+        model.load_weights(weights_path)
+        
+        # Determine the number of training examples
+        n_train_samples = x.shape[0]
+        
+        # Calculate steps per epoch
+        steps_per_epoch = n_train_samples // batch_size
+        
+        # Create validation split if requested
+        x_train = x
+        y_train = y
+        x_val = None
+        y_val = None
+        validation_data = None
+        
+        if validation_split > 0 and len(x) > 1:
+            # Create validation indices
+            indices = np.random.permutation(len(x))
+            val_size = int(len(x) * validation_split)
+            train_indices = indices[val_size:]
+            val_indices = indices[:val_size]
+            
+            x_train, y_train = x[train_indices], y[train_indices]
+            x_val, y_val = x[val_indices], y[val_indices]
+            validation_data = (x_val, y_val)
+        
+        # Setup optimizer with differential privacy
+        if noise_multiplier is None:
+            # Calculate noise multiplier from epsilon and delta
+            from tensorflow_privacy.privacy.analysis.rdp_accountant import compute_rdp
+            from tensorflow_privacy.privacy.analysis.rdp_accountant import get_privacy_spent
+            
+            # Use binary search to find noise multiplier for target epsilon
+            def compute_epsilon(n_multiplier):
+                """Compute epsilon for given noise multiplier and parameters."""
+                orders = [1 + x / 10.0 for x in range(1, 100)] + list(range(12, 64))
+                rdp = compute_rdp(
+                    q=batch_size / n_train_samples,
+                    noise_multiplier=n_multiplier,
+                    steps=epochs * steps_per_epoch,
+                    orders=orders
+                )
+                return get_privacy_spent(orders, rdp, target_delta=delta)[0]
+            
+            # Binary search for noise multiplier
+            low, high = 0.1, 10.0
+            while high - low > 0.01:
+                mid = (low + high) / 2
+                current_eps = compute_epsilon(mid)
+                if current_eps > epsilon:
+                    low = mid
+                else:
+                    high = mid
+            
+            noise_multiplier = high
+        
+        # Create DP optimizer
+        if optimizer_name.lower() == "sgd":
+            optimizer = DPKerasSGDOptimizer(
+                l2_norm_clip=max_grad_norm,
+                noise_multiplier=noise_multiplier,
+                learning_rate=learning_rate
+            )
+        else:
+            # For other optimizers, use SGD with DP as the default
+            optimizer = DPKerasSGDOptimizer(
+                l2_norm_clip=max_grad_norm,
+                noise_multiplier=noise_multiplier,
+                learning_rate=learning_rate
+            )
+        
+        # Compile the model
+        model.compile(
+            optimizer=optimizer,
+            loss=loss,
+            metrics=metrics
         )
-    else:
-        # Train the model with the data as is (for simplicity)
+        
+        # Setup callbacks
+        callbacks = []
+        
+        # Add early stopping if requested
+        if early_stopping_patience > 0 and validation_data is not None:
+            early_stopping = tf.keras.callbacks.EarlyStopping(
+                monitor='val_loss',
+                patience=early_stopping_patience,
+                restore_best_weights=True
+            )
+            callbacks.append(early_stopping)
+        
+        # Train the model
         history = model.fit(
-            train_data,
-            epochs=epochs,
+            x_train, y_train,
             batch_size=batch_size,
-            verbose=kwargs.get("verbose", 1),
+            epochs=epochs,
+            verbose=verbose,
+            validation_data=validation_data,
+            callbacks=callbacks,
+            shuffle=shuffle
         )
-    
-    # Return the model weights and training history
-    return {
-        "weights": [w.tolist() for w in model.get_weights()],
-        "history": {k: (v if isinstance(v, (int, float)) else v.tolist()) 
-                    for k, v in history.history.items()}
-    } 
+        
+        # Save the trained weights
+        model.save_weights(final_weights_path)
+        
+        # Calculate final privacy spent
+        eps, _ = compute_dp_sgd_privacy(
+            n=n_train_samples,
+            batch_size=batch_size,
+            noise_multiplier=noise_multiplier,
+            epochs=epochs,
+            delta=delta
+        )
+        
+        # Prepare training metrics to return
+        train_metrics = {}
+        for key, values in history.history.items():
+            train_metrics[key] = float(values[-1])  # Get the last value
+        
+        return {
+            "success": True,
+            "metrics": train_metrics,
+            "privacy_spent": {
+                "epsilon": float(eps),
+                "delta": float(delta),
+                "noise_multiplier": float(noise_multiplier)
+            }
+        }
+        
+    except Exception as e:
+        import traceback
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        } 
