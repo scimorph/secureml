@@ -290,6 +290,23 @@ def synthetic():
     help="Number of sample rows to examine for sensitive data detection",
 )
 @click.option(
+    "--preserve-outliers",
+    is_flag=True,
+    help="Preserve outlier patterns from original data (statistical method)",
+)
+@click.option(
+    "--handle-skewness",
+    is_flag=True,
+    default=True,
+    help="Handle skewed numerical distributions (statistical method)",
+)
+@click.option(
+    "--categorical-threshold",
+    type=int,
+    default=20,
+    help="Max unique values to treat as categorical (statistical method)",
+)
+@click.option(
     "--format",
     type=click.Choice(["csv", "json", "parquet"]),
     default="csv",
@@ -304,6 +321,9 @@ def generate_data(
     auto_detect_sensitive, 
     sensitivity_confidence, 
     sensitivity_sample_size,
+    preserve_outliers,
+    handle_skewness,
+    categorical_threshold,
     format
 ):
     """Generate synthetic data based on a real dataset.
@@ -319,6 +339,11 @@ def generate_data(
         secureml synthetic generate real_data.csv synthetic_data.csv \\
         --auto-detect-sensitive --sensitivity-confidence 0.7 \\
         --sensitivity-sample-size 200
+        
+    Advanced statistical modeling:
+        secureml synthetic generate real_data.csv synthetic_data.csv \\
+        --method statistical --preserve-outliers \\
+        --handle-skewness --categorical-threshold 15
     """
     click.echo(f"Reading template data from {input_file}...")
     
@@ -343,6 +368,15 @@ def generate_data(
         "sample_size": sensitivity_sample_size
     }
     
+    # Statistical modeling parameters
+    statistical_params = {}
+    if method == "statistical":
+        statistical_params = {
+            "preserve_outliers": preserve_outliers,
+            "handle_skewness": handle_skewness,
+            "categorical_threshold": categorical_threshold,
+        }
+    
     click.echo(
         f"Generating {samples} synthetic samples using {method} method..."
     )
@@ -353,7 +387,8 @@ def generate_data(
         num_samples=samples,
         method=method,
         sensitive_columns=list(sensitive) if sensitive else None,
-        sensitivity_detection=sensitivity_detection
+        sensitivity_detection=sensitivity_detection,
+        **statistical_params
     )
     
     # Save output in the requested format

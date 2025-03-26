@@ -116,6 +116,13 @@ secureml synthetic generate real_data.csv synthetic_data.csv \
   --method statistical \
   --samples 5000
 
+# Use advanced statistical modeling options
+secureml synthetic generate real_data.csv synthetic_data.csv \
+  --method statistical \
+  --preserve-outliers \
+  --handle-skewness \
+  --categorical-threshold 15
+
 # Generate synthetic data using advanced SDV Copula model
 secureml synthetic generate real_data.csv synthetic_data.csv \
   --method sdv-copula \
@@ -519,6 +526,17 @@ import pandas as pd
 
 # Load your real data
 real_data = pd.read_csv('path/to/your/dataset.csv')
+
+# Generate synthetic data with improved statistical modeling
+statistical_synthetic = generate_synthetic_data(
+    template=real_data,
+    num_samples=1000,
+    method="statistical",
+    # Advanced statistical modeling options
+    preserve_outliers=True,  # Include outliers in the synthetic data
+    handle_skewness=True,    # Transform skewed distributions for better modeling
+    categorical_threshold=15 # Treat columns with 15 or fewer unique values as categorical
+)
 
 # Generate synthetic data using SDV's GaussianCopula model
 # This preserves statistical relationships between variables
