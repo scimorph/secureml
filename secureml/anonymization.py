@@ -40,6 +40,9 @@ def anonymize(
         original_format_is_list = True
         data = pd.DataFrame(data)
 
+    # Convert to DataFrame and validate columns
+    df = data.copy()
+
     # If no sensitive columns are specified, try to identify them automatically
     if sensitive_columns is None:
         sensitive_columns = _identify_sensitive_columns(data)
@@ -47,6 +50,11 @@ def anonymize(
             raise ValueError(
                 "No sensitive columns identified. Please specify them manually."
             )
+    else:
+        # Check for non-existent columns
+        missing_cols = [col for col in sensitive_columns if col not in df.columns]
+        if missing_cols:
+            raise ValueError(f"The following columns were not found in the data: {', '.join(missing_cols)}")
 
     # Apply the selected anonymization method
     if method == "k-anonymity":
@@ -489,6 +497,7 @@ def _apply_pseudonymization(
         ValueError: If an unsupported strategy is specified or required parameters
                    are missing
     """
+
     import hashlib
     import re
     from typing import Dict, Optional, Pattern
@@ -674,25 +683,25 @@ def _apply_pseudonymization(
 
         # Process based on strategy
         if strategy == "hash":
-            pseudonymized_data[col] = pseudonymized_data[col].apply(
+            pseudonymized_data[col] = pseudonymized_data[col].map(
                 lambda x: _preserve_format(
                     x, _generate_hash(str(x)), format_pattern
                 ) if pd.notna(x) else x
             )
         elif strategy == "fpe":
-            pseudonymized_data[col] = pseudonymized_data[col].apply(
+            pseudonymized_data[col] = pseudonymized_data[col].map(
                 lambda x: _fpe_pseudonym(str(x), format_pattern)
                 if pd.notna(x) else x
             )
         elif strategy == "deterministic":
-            pseudonymized_data[col] = pseudonymized_data[col].apply(
+            pseudonymized_data[col] = pseudonymized_data[col].map(
                 lambda x: _deterministic_pseudonym(
                     str(x), salt, format_pattern
                 ) if pd.notna(x) else x
             )
         else:  # custom
             mapping = kwargs["mapping"]
-            pseudonymized_data[col] = pseudonymized_data[col].apply(
+            pseudonymized_data[col] = pseudonymized_data[col].map(
                 lambda x: _custom_pseudonym(str(x), mapping, format_pattern)
                 if pd.notna(x) else x
             )
@@ -925,6 +934,7 @@ def _apply_data_masking(
             
             masked_data[col] = masked_data[col].apply(
                 lambda x: _character_mask(x, show_first, show_last, mask_char)
+                if pd.notna(x) else x
             )
             
         elif strategy == "fixed":
@@ -934,6 +944,7 @@ def _apply_data_masking(
             
             masked_data[col] = masked_data[col].apply(
                 lambda x: _fixed_mask(x, format_str, mask_char, preserve_special)
+                if pd.notna(x) else x
             )
             
         elif strategy == "regex":
@@ -942,6 +953,7 @@ def _apply_data_masking(
             
             masked_data[col] = masked_data[col].apply(
                 lambda x: _regex_mask(x, pattern, replacement)
+                if pd.notna(x) else x
             )
             
         elif strategy == "random":
@@ -975,16 +987,20 @@ def _apply_data_masking(
                     lambda x: _random_mask(
                         x, char_set, preserve_length, preserve_type, seed
                     )
+                    if pd.notna(x) else x
                 )
                 
         elif strategy == "redact":
             redaction_text = col_config.get("redaction_text", "[REDACTED]")
             masked_data[col] = masked_data[col].apply(
                 lambda x: _redact_value(x, redaction_text)
+                if pd.notna(x) else x
             )
             
         elif strategy == "nullify":
-            masked_data[col] = masked_data[col].apply(_nullify_value)
+            masked_data[col] = masked_data[col].map(
+                lambda x: _nullify_value(x) if pd.notna(x) else x
+            )
             
         else:
             raise ValueError(f"Unsupported masking strategy: {strategy}")
@@ -1062,7 +1078,6 @@ def _apply_generalization(
         try:
             series = pd.to_numeric(series)
         except ValueError:
-            # Return as is if not possible
             return series
         
         # Determine min and max bounds
@@ -1072,12 +1087,9 @@ def _apply_generalization(
             max_bound = math.ceil(series.max() / range_size) * range_size
             
         # Apply range generalization
-        result = pd.Series(index=series.index, dtype='object')
-        
-        for idx, value in series.items():
+        def generalize_value(value):
             if pd.isna(value):
-                result[idx] = value
-                continue
+                return value
                 
             # Find which range this value belongs to
             lower_bound = math.floor((value - min_bound) / range_size) * range_size + min_bound
@@ -1092,11 +1104,11 @@ def _apply_generalization(
                 upper_str = str(int(upper_bound))
                 
             if include_bounds:
-                result[idx] = f"[{lower_str}-{upper_str})"
+                return f"[{lower_str}-{upper_str})"
             else:
-                result[idx] = f"{lower_str} to {upper_str}"
+                return f"{lower_str} to {upper_str}"
                 
-        return result
+        return series.map(lambda x: generalize_value(x) if pd.notna(x) else x)
     
     def _apply_hierarchy_generalization(
         series: pd.Series,
@@ -1133,9 +1145,8 @@ def _apply_generalization(
                         
                 return current_value
                 
-            return series.apply(generalize_value)
+            return series.map(lambda x: generalize_value(x) if pd.notna(x) else x)
         else:
-            # If taxonomy is not a dictionary, return the original series
             return series
     
     def _apply_binning(
@@ -1155,7 +1166,6 @@ def _apply_generalization(
         try:
             series = pd.to_numeric(series)
         except ValueError:
-            # Try to convert to numeric
             return series
                 
         # Handle NaN values separately
@@ -1253,7 +1263,7 @@ def _apply_generalization(
             frequent_values = value_counts.nlargest(k).index.tolist()
             
         # Apply generalization
-        return series.apply(
+        return series.map(
             lambda x: x if pd.isna(x) or x in frequent_values else other_value
         )
     
@@ -1278,20 +1288,25 @@ def _apply_generalization(
             return series
                 
         # Apply different rounding methods
-        if rounding_method == "nearest":
-            rounded = (series / base).round() * base
-        elif rounding_method == "floor":
-            rounded = (series / base).apply(np.floor) * base
-        elif rounding_method == "ceiling":
-            rounded = (series / base).apply(np.ceil) * base
-        else:
-            rounded = (series / base).round() * base
-            
-        # Apply precision
-        if precision == 0:
-            return rounded.astype(int)
-        else:
-            return rounded.round(precision)
+        def round_value(value):
+            if pd.isna(value):
+                return value
+            if rounding_method == "nearest":
+                rounded = round(value / base) * base
+            elif rounding_method == "floor":
+                rounded = math.floor(value / base) * base
+            elif rounding_method == "ceiling":
+                rounded = math.ceil(value / base) * base
+            else:
+                rounded = round(value / base) * base
+                
+            # Apply precision
+            if precision == 0:
+                return int(rounded)
+            else:
+                return round(rounded, precision)
+                
+        return series.map(lambda x: round_value(x) if pd.notna(x) else x)
     
     def _apply_concept_hierarchy(
         series: pd.Series,
@@ -1313,8 +1328,8 @@ def _apply_generalization(
                 value_to_concept[value] = concept
                 
         # Apply the concept mapping
-        return series.apply(
-            lambda x: value_to_concept.get(x, default_concept) if not pd.isna(x) else x
+        return series.map(
+            lambda x: value_to_concept.get(x, default_concept) if pd.notna(x) else x
         )
     
     def _apply_date_generalization(
@@ -1335,32 +1350,37 @@ def _apply_generalization(
         except ValueError:
             return series
                 
-        if level == "year":
-            if format:
-                return series.dt.strftime(format)
-            return series.dt.strftime("%Y")
-        elif level == "month":
-            if format:
-                return series.dt.strftime(format)
-            return series.dt.strftime("%Y-%m")
-        elif level == "quarter":
-            year = series.dt.year
-            quarter = series.dt.quarter
-            return year.astype(str) + "-Q" + quarter.astype(str)
-        elif level == "week":
-            if format:
-                return series.dt.strftime(format)
-            year = series.dt.isocalendar().year
-            week = series.dt.isocalendar().week
-            return year.astype(str) + "-W" + week.astype(str).str.zfill(2)
-        elif level == "day":
-            if format:
-                return series.dt.strftime(format)
-            return series.dt.strftime("%Y-%m-%d")
-        else:  # Default to month
-            if format:
-                return series.dt.strftime(format)
-            return series.dt.strftime("%Y-%m")
+        def generalize_date(value):
+            if pd.isna(value):
+                return value
+            if level == "year":
+                if format:
+                    return value.strftime(format)
+                return value.strftime("%Y")
+            elif level == "month":
+                if format:
+                    return value.strftime(format)
+                return value.strftime("%Y-%m")
+            elif level == "quarter":
+                year = value.year
+                quarter = (value.month - 1) // 3 + 1
+                return f"{year}-Q{quarter}"
+            elif level == "week":
+                if format:
+                    return value.strftime(format)
+                year = value.isocalendar()[0]
+                week = value.isocalendar()[1]
+                return f"{year}-W{week:02d}"
+            elif level == "day":
+                if format:
+                    return value.strftime(format)
+                return value.strftime("%Y-%m-%d")
+            else:  # Default to month
+                if format:
+                    return value.strftime(format)
+                return value.strftime("%Y-%m")
+                
+        return series.map(lambda x: generalize_date(x) if pd.notna(x) else x)
     
     def _apply_string_generalization(
         series: pd.Series,
@@ -1397,7 +1417,7 @@ def _apply_generalization(
             else:
                 return value_str
                 
-        return series.apply(generalize_string)
+        return series.map(lambda x: generalize_string(x) if pd.notna(x) else x)
     
     # Process each sensitive column
     for col in sensitive_columns:
@@ -1509,4 +1529,4 @@ def _apply_generalization(
             # Default string generalization: prefix
             generalized_data[col] = _apply_string_generalization(generalized_data[col])
             
-    return generalized_data 
+    return generalized_data

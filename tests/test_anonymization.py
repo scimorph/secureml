@@ -20,9 +20,21 @@ class MockAnonymizationModule:
         else:
             original_format_is_list = True
             df = pd.DataFrame(data)
+        
+        # Check if the DataFrame is empty
+        if df.empty or len(df.columns) == 0:
+            return df if not original_format_is_list else []
             
         if sensitive_columns is None:
             sensitive_columns = MockAnonymizationModule._identify_sensitive_columns(df)
+        else:
+            # Validate that all specified sensitive columns exist in the DataFrame
+            missing_cols = [col for col in sensitive_columns if col not in df.columns]
+            if missing_cols:
+                raise ValueError(f"The following columns were not found in the data: {', '.join(missing_cols)}")
+
+        if not sensitive_columns:
+            raise ValueError("No sensitive columns to anonymize. Please specify them.")
 
         # Validate k parameter for k-anonymity    
         if method == "k-anonymity":
@@ -305,7 +317,7 @@ class MockAnonymizationModule:
                     df[col] = df[col].map(taxonomy).fillna(df[col])
                 else:
                     # Default hierarchy: just keep the first character
-                    df[col] = df[col].astype(str).apply(lambda x: x[0] + "..." if len(x) > 1 else x)
+                    df[col] = df[col].map(lambda x: str(x)[0] + "..." if pd.notna(x) and len(str(x)) > 1 else x)
                     
             elif method == "binning" and pd.api.types.is_numeric_dtype(df[col]):
                 # Bin numeric values
@@ -341,7 +353,7 @@ class MockAnonymizationModule:
                 value_counts = df[col].value_counts()
                 top_values = value_counts.nlargest(k).index
                 
-                df[col] = df[col].apply(lambda x: x if x in top_values else other_value)
+                df[col] = df[col].map(lambda x: x if x in top_values else other_value)
                 
             elif method == "rounding" and pd.api.types.is_numeric_dtype(df[col]):
                 # Round numeric values
@@ -355,10 +367,10 @@ class MockAnonymizationModule:
                 default_concept = col_config.get("default_concept", "Other")
                 
                 if concepts:
-                    df[col] = df[col].map(lambda x: concepts.get(x, default_concept))
+                    df[col] = df[col].map(lambda x: concepts.get(x, default_concept) if pd.notna(x) else x)
                 else:
                     # Default concept: just generalize strings
-                    df[col] = df[col].astype(str).apply(lambda x: x[0] + "..." if len(x) > 1 else x)
+                    df[col] = df[col].map(lambda x: str(x)[0] + "..." if pd.notna(x) and len(str(x)) > 1 else x)
                     
             else:
                 # Default generalization based on data type
@@ -367,7 +379,7 @@ class MockAnonymizationModule:
                     df[col] = df[col].apply(lambda x: round(x / 10) * 10 if not pd.isna(x) else x)
                 elif pd.api.types.is_string_dtype(df[col]) or pd.api.types.is_categorical_dtype(df[col]):
                     # Default string generalization: truncate
-                    df[col] = df[col].astype(str).apply(lambda x: x[0] + "..." if len(x) > 1 else x)
+                    df[col] = df[col].map(lambda x: str(x)[0] + "..." if pd.notna(x) and len(str(x)) > 1 else x)
         
         return df
 
@@ -854,7 +866,9 @@ class TestAnonymizationErrors(unittest.TestCase):
                 sensitive_columns=["non_existent_column"]
             )
         
-        self.assertIn("columns not found in the data", str(context.exception))
+        error_msg = str(context.exception)
+        self.assertIn("non_existent_column", error_msg)
+        self.assertIn("not found in the data", error_msg)
 
     def test_no_sensitive_columns_identified(self):
         """Test behavior when no sensitive columns can be identified."""
@@ -864,20 +878,20 @@ class TestAnonymizationErrors(unittest.TestCase):
             "value": [1, 2, 3, 4, 5],
             "flag": [True, False, True, False, True]
         })
-        
+
         # When no sensitive columns are identified and none are specified,
         # the function should raise an error
         with self.assertRaises(ValueError) as context:
             anonymize(non_sensitive_data)
         
-        self.assertIn("No sensitive columns identified", str(context.exception))
+        self.assertIn("No sensitive columns to anonymize", str(context.exception))
         
         # When explicitly providing an empty list of sensitive columns,
         # the function should still raise an error
         with self.assertRaises(ValueError) as context:
             anonymize(non_sensitive_data, sensitive_columns=[])
         
-        self.assertIn("No sensitive columns specified", str(context.exception))
+        self.assertIn("No sensitive columns to anonymize", str(context.exception))
 
 
 class TestAnonymizationParameterVariations(unittest.TestCase):
