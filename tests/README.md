@@ -14,7 +14,6 @@ The tests are organized by module, with each module having its own test file:
 - `test_federated.py`: Tests for the federated learning module
 - `test_reporting.py`: Tests for the report generation module
 - `test_cli.py`: Tests for the command-line interface
-- `test_integrations.py`: Integration tests for entire workflows
 
 ## Testing Approach
 
