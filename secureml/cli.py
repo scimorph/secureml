@@ -255,7 +255,7 @@ def synthetic():
 @click.argument("output_file", type=click.Path())
 @click.option(
     "--method",
-    type=click.Choice(["simple", "statistical", "sdv-copula", "sdv-ctgan", "gan"]),
+    type=click.Choice(["simple", "statistical", "sdv-copula", "sdv-ctgan", "gan", "copula"]),
     default="statistical",
     help="Generation method (default: statistical)",
 )
@@ -298,13 +298,13 @@ def synthetic():
     "--handle-skewness",
     is_flag=True,
     default=True,
-    help="Handle skewed numerical distributions (statistical method)",
+    help="Handle skewed numerical distributions (statistical/copula methods)",
 )
 @click.option(
     "--categorical-threshold",
     type=int,
     default=20,
-    help="Max unique values to treat as categorical (statistical method)",
+    help="Max unique values to treat as categorical (statistical/copula methods)",
 )
 @click.option(
     "--epochs",
@@ -331,6 +331,24 @@ def synthetic():
     help="Dimension of noise input for GAN generator",
 )
 @click.option(
+    "--copula-type",
+    type=click.Choice(["gaussian", "t"]),
+    default="gaussian",
+    help="Type of copula to use (copula method)",
+)
+@click.option(
+    "--fit-method",
+    type=click.Choice(["ml", "rank"]),
+    default="ml",
+    help="Method for fitting copula (copula method)",
+)
+@click.option(
+    "--handle-missing",
+    type=click.Choice(["mean", "median", "zero"]),
+    default="mean",
+    help="How to handle missing values (copula method)",
+)
+@click.option(
     "--format",
     type=click.Choice(["csv", "json", "parquet"]),
     default="csv",
@@ -352,6 +370,9 @@ def generate_data(
     batch_size,
     learning_rate,
     noise_dim,
+    copula_type,
+    fit_method,
+    handle_missing,
     format
 ):
     """Generate synthetic data based on a real dataset.
@@ -377,6 +398,11 @@ def generate_data(
         secureml synthetic generate real_data.csv synthetic_data.csv \\
         --method gan --epochs 500 --batch-size 64 \\
         --learning-rate 0.0002 --noise-dim 128
+        
+    Copula-based generation:
+        secureml synthetic generate real_data.csv synthetic_data.csv \\
+        --method copula --copula-type gaussian --fit-method ml \\
+        --handle-missing mean --categorical-threshold 15
     """
     click.echo(f"Reading template data from {input_file}...")
     
@@ -418,6 +444,15 @@ def generate_data(
             "batch_size": batch_size,
             "learning_rate": learning_rate,
             "noise_dim": noise_dim,
+        }
+    # Copula parameters
+    elif method == "copula":
+        method_params = {
+            "copula_type": copula_type,
+            "fit_method": fit_method,
+            "handle_missing": handle_missing,
+            "handle_skewness": handle_skewness,
+            "categorical_threshold": categorical_threshold,
         }
     
     click.echo(

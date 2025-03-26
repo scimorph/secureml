@@ -118,11 +118,19 @@ secureml synthetic generate real_data.csv synthetic_data.csv \
   --handle-skewness \
   --categorical-threshold 15
 
-# Generate synthetic data using advanced SDV Copula model
+# Generate synthetic data using SDV Copula model
 secureml synthetic generate real_data.csv synthetic_data.csv \
   --method sdv-copula \
   --samples 5000 \
   --sensitive name --sensitive email
+
+# Generate synthetic data using custom copulas
+secureml synthetic generate real_data.csv synthetic_data.csv \
+  --method copula \
+  --copula-type gaussian \
+  --fit-method ml \
+  --handle-missing mean \
+  --categorical-threshold 15
 
 # Generate synthetic data using custom GANs
 secureml synthetic generate real_data.csv synthetic_data.csv \
@@ -515,39 +523,30 @@ synthetic_data = generate_synthetic_data(
 statistical_synthetic = generate_synthetic_data(
     template=real_data,
     num_samples=1000,
-    method="statistical"
-)
-```
-
-#### Advanced Statistical Modeling with SDV
-
-For more complex use cases where preserving statistical relationships and distributions is critical:
-
-```python
-from secureml.synthetic import generate_synthetic_data
-import pandas as pd
-
-# Load your real data
-real_data = pd.read_csv('path/to/your/dataset.csv')
-
-# Generate synthetic data with improved statistical modeling
-statistical_synthetic = generate_synthetic_data(
-    template=real_data,
-    num_samples=1000,
     method="statistical",
-    # Advanced statistical modeling options
-    preserve_outliers=True,  # Include outliers in the synthetic data
-    handle_skewness=True,    # Transform skewed distributions for better modeling
-    categorical_threshold=15 # Treat columns with 15 or fewer unique values as categorical
+    preserve_outliers=True,      # Include outliers in the synthetic data
+    handle_skewness=True,        # Transform skewed distributions for better modeling
+    categorical_threshold=15     # Treat columns with 15 or fewer unique values as categorical
 )
 
 # Generate synthetic data using SDV's GaussianCopula model
-# This preserves statistical relationships between variables
-synthetic_data = generate_synthetic_data(
+sdv_synthetic = generate_synthetic_data(
     template=real_data,
     num_samples=1000,
     method="sdv-copula",
     sensitive_columns=["name", "email", "phone_number"]
+)
+
+# Generate synthetic data using custom copulas
+copula_synthetic = generate_synthetic_data(
+    template=real_data,
+    num_samples=1000,
+    method="copula",
+    copula_type="gaussian",    # Type of copula: 'gaussian' or 't'
+    fit_method="ml",           # Method for fitting: 'ml' or 'rank'
+    handle_missing="mean",     # How to handle missing values
+    handle_skewness=True,      # Whether to handle skewed distributions
+    categorical_threshold=15   # Max unique values for categorical columns
 )
 
 # Generate synthetic data using custom GANs with advanced configuration

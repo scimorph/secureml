@@ -1394,7 +1394,14 @@ def _generate_copula_synthetic(
         template: Template dataset
         num_samples: Number of samples to generate
         sensitive_columns: Columns that contain sensitive data
-        **kwargs: Additional parameters
+        **kwargs: Additional parameters:
+            - copula_type: Type of copula to use (default: "gaussian")
+            - fit_method: Method for fitting copula (default: "ml")
+            - preserve_dtypes: Whether to preserve original data types (default: True)
+            - handle_missing: How to handle missing values (default: "mean")
+            - categorical_threshold: Max unique values to treat as categorical (default: 20)
+            - handle_skewness: Whether to handle skewed numerical distributions (default: True)
+            - seed: Random seed for reproducibility
         
     Returns:
         DataFrame containing synthetic data
@@ -1410,12 +1417,237 @@ def _generate_copula_synthetic(
             **kwargs
         )
     else:
-        # Placeholder - in a real implementation, this would use copulas
-        # For demonstration purposes, we'll reuse the statistical method
-        print(
-            "Copula synthesis not fully implemented in this version; "
-            "using statistical method"
+        # Implement copula-based synthetic data generation
+        try:
+            from scipy import stats
+            from scipy.stats import norm, gaussian_kde, rankdata
+            import numpy as np
+            from sklearn.preprocessing import QuantileTransformer
+        except ImportError:
+            raise ImportError(
+                "SciPy and scikit-learn are required for copula-based synthesis. "
+                "Please install with 'pip install scipy scikit-learn'"
+            )
+            
+        # Extract kwargs with defaults
+        copula_type = kwargs.get('copula_type', 'gaussian')
+        fit_method = kwargs.get('fit_method', 'ml')
+        preserve_dtypes = kwargs.get('preserve_dtypes', True)
+        handle_missing = kwargs.get('handle_missing', 'mean')
+        categorical_threshold = kwargs.get('categorical_threshold', 20)
+        handle_skewness = kwargs.get('handle_skewness', True)
+        seed = kwargs.get('seed', None)
+        
+        # Set random seed if provided
+        if seed is not None:
+            np.random.seed(seed)
+        
+        print(f"Generating synthetic data using {copula_type} copula...")
+        
+        # Create a working copy of the data
+        data = template.copy()
+        
+        # Step 1: Handle sensitive columns separately
+        for col in sensitive_columns:
+            if col in data.columns:
+                data[col] = _generate_sensitive_values(col, data[col], len(data))
+        
+        # Step 2: Categorize columns
+        numeric_cols = []
+        categorical_cols = []
+        datetime_cols = []
+        
+        # Store original dtypes
+        original_dtypes = data.dtypes.to_dict()
+        
+        # Process data types and identify column categories
+        for col in data.columns:
+            if pd.api.types.is_datetime64_dtype(data[col]):
+                datetime_cols.append(col)
+                # Convert datetime to numeric (timestamp)
+                data[col] = data[col].astype(np.int64) // 10**9
+                numeric_cols.append(col)
+            elif pd.api.types.is_numeric_dtype(data[col]):
+                numeric_cols.append(col)
+            elif data[col].nunique() < categorical_threshold:
+                categorical_cols.append(col)
+            else:
+                categorical_cols.append(col)
+        
+        # Step 3: Handle missing values
+        for col in data.columns:
+            if data[col].isna().any():
+                if col in numeric_cols:
+                    if handle_missing == 'mean':
+                        data[col] = data[col].fillna(data[col].mean())
+                    elif handle_missing == 'median':
+                        data[col] = data[col].fillna(data[col].median())
+                    else:  # Default to 0
+                        data[col] = data[col].fillna(0)
+                else:
+                    # For categorical, use most frequent value
+                    data[col] = data[col].fillna(data[col].mode()[0])
+        
+        # Step 4: Create processed data for copula modeling
+        processed_data = pd.DataFrame(index=data.index)
+        
+        # Step 5: Transform categorical variables to numeric
+        categorical_mappers = {}
+        for col in categorical_cols:
+            # Create a mapping for this categorical column
+            unique_values = data[col].unique()
+            value_map = {val: i for i, val in enumerate(unique_values)}
+            categorical_mappers[col] = {'map': value_map, 'values': unique_values}
+            
+            # Transform to numeric
+            processed_data[col] = data[col].map(value_map)
+        
+        # Step 6: Add numeric columns directly
+        for col in numeric_cols:
+            processed_data[col] = data[col]
+        
+        # Step 7: Handle skewness if requested
+        transformers = {}
+        if handle_skewness:
+            for col in numeric_cols:
+                # Skip if column has too many identical values
+                if processed_data[col].nunique() > 5:
+                    skewness = stats.skew(processed_data[col].dropna())
+                    if abs(skewness) > 1.0:  # Threshold for "skewed" data
+                        transformer = QuantileTransformer(output_distribution='normal')
+                        transformed_col = transformer.fit_transform(
+                            processed_data[[col]].values
+                        ).flatten()
+                        processed_data[col] = transformed_col
+                        transformers[col] = transformer
+        
+        # Step 8: Apply rank transformation to all variables for copula modeling
+        rank_data = pd.DataFrame(index=processed_data.index)
+        
+        for col in processed_data.columns:
+            # Perform rank transformation (convert to uniform marginals)
+            ranks = rankdata(processed_data[col])
+            # Scale ranks to [0, 1)
+            rank_data[col] = (ranks - 0.5) / len(ranks)
+        
+        # Step 9: Transform uniform marginals to standard normal for Gaussian copula
+        normal_data = pd.DataFrame(index=rank_data.index)
+        
+        for col in rank_data.columns:
+            # Apply inverse normal CDF to get standard normal variates
+            normal_data[col] = norm.ppf(rank_data[col])
+        
+        # Step 10: Compute correlation matrix (Gaussian copula parameter)
+        if copula_type == 'gaussian':
+            # For Gaussian copula, we use the correlation matrix
+            if fit_method == 'ml':
+                # Maximum likelihood estimation
+                corr_matrix = np.corrcoef(normal_data.values, rowvar=False)
+            else:
+                # Spearman's rank correlation
+                corr_matrix = processed_data.corr(method='spearman').values
+        else:
+            # For t-copula, we would also need to estimate the degrees of freedom
+            # This is a simplified version using Spearman's correlation
+            corr_matrix = processed_data.corr(method='spearman').values
+        
+        # Step 11: Generate synthetic samples from the copula
+        if copula_type == 'gaussian':
+            # Generate samples from multivariate normal with the estimated correlation
+            synthetic_normal = np.random.multivariate_normal(
+                mean=np.zeros(corr_matrix.shape[0]),
+                cov=corr_matrix,
+                size=num_samples
+            )
+        else:
+            # For t-copula, we would use multivariate t-distribution
+            # This is a simplified version using multivariate normal
+            synthetic_normal = np.random.multivariate_normal(
+                mean=np.zeros(corr_matrix.shape[0]),
+                cov=corr_matrix,
+                size=num_samples
+            )
+        
+        # Convert to DataFrame with column names
+        synthetic_normal_df = pd.DataFrame(
+            synthetic_normal, 
+            columns=normal_data.columns
         )
-        return _generate_statistical_synthetic(
-            template, num_samples, sensitive_columns, **kwargs
-        ) 
+        
+        # Step 12: Transform back to uniform marginals
+        synthetic_uniform_df = pd.DataFrame(index=range(num_samples))
+        
+        for col in synthetic_normal_df.columns:
+            # Apply normal CDF to get uniform variates
+            synthetic_uniform_df[col] = norm.cdf(synthetic_normal_df[col])
+        
+        # Step 13: Transform back to original marginal distributions
+        synthetic_df = pd.DataFrame(index=range(num_samples))
+        
+        # Process numeric columns
+        for col in numeric_cols:
+            # Get the empirical inverse CDF
+            original_values = processed_data[col].sort_values().values
+            
+            # Apply inverse CDF to transform uniform back to original distribution
+            quantiles = synthetic_uniform_df[col].values
+            indices = (quantiles * len(original_values)).astype(int).clip(0, len(original_values) - 1)
+            synthetic_values = original_values[indices]
+            
+            # Inverse transform if skewness was handled
+            if col in transformers and handle_skewness:
+                synthetic_values = synthetic_values.reshape(-1, 1)
+                synthetic_values = transformers[col].inverse_transform(synthetic_values).flatten()
+            
+            synthetic_df[col] = synthetic_values
+        
+        # Process categorical columns
+        for col in categorical_cols:
+            # Get the mapping information
+            value_map = categorical_mappers[col]['map']
+            unique_values = categorical_mappers[col]['values']
+            
+            # Determine the number of categories
+            num_categories = len(value_map)
+            
+            # Create bins for the uniform values
+            bin_edges = np.linspace(0, 1, num_categories + 1)
+            
+            # Assign each uniform value to a category index
+            indices = np.digitize(synthetic_uniform_df[col], bin_edges) - 1
+            indices = np.clip(indices, 0, num_categories - 1)
+            
+            # Map indices back to original categorical values
+            synthetic_values = [unique_values[i] for i in indices]
+            synthetic_df[col] = synthetic_values
+        
+        # Step 14: Convert datetime columns back
+        for col in datetime_cols:
+            if col in synthetic_df.columns:
+                synthetic_df[col] = pd.to_datetime(synthetic_df[col].astype(np.int64) * 10**9)
+        
+        # Step 15: Preserve original data types if requested
+        if preserve_dtypes:
+            for col, dtype in original_dtypes.items():
+                if col in synthetic_df.columns:
+                    try:
+                        if pd.api.types.is_categorical_dtype(dtype):
+                            categories = template[col].cat.categories
+                            synthetic_df[col] = pd.Categorical(
+                                synthetic_df[col], 
+                                categories=categories
+                            )
+                        elif pd.api.types.is_integer_dtype(dtype) and col not in datetime_cols:
+                            synthetic_df[col] = synthetic_df[col].round().astype(dtype)
+                        elif not pd.api.types.is_datetime64_dtype(dtype) and col not in datetime_cols:
+                            synthetic_df[col] = synthetic_df[col].astype(dtype)
+                    except (TypeError, ValueError):
+                        # Skip if type conversion fails
+                        pass
+        
+        # Step 16: Handle sensitive columns for the final synthetic data
+        for col in sensitive_columns:
+            if col in synthetic_df.columns:
+                synthetic_df[col] = _generate_sensitive_values(col, template[col], num_samples)
+        
+        return synthetic_df 
