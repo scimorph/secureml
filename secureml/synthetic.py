@@ -1108,7 +1108,14 @@ def _generate_gan_synthetic(
         template: Template dataset
         num_samples: Number of samples to generate
         sensitive_columns: Columns that contain sensitive data
-        **kwargs: Additional parameters
+        **kwargs: Additional parameters:
+            - epochs: Number of training epochs (default: 300)
+            - batch_size: Batch size for training (default: 32)
+            - generator_dim: Dimensions of generator layers (default: [128, 128])
+            - discriminator_dim: Dimensions of discriminator layers (default: [128, 128])
+            - learning_rate: Learning rate for optimizer (default: 0.001)
+            - noise_dim: Dimension of noise input (default: 100)
+            - preserve_dtypes: Whether to preserve original dtypes (default: True)
         
     Returns:
         DataFrame containing synthetic data
@@ -1120,15 +1127,256 @@ def _generate_gan_synthetic(
             template, num_samples, sensitive_columns, synthesizer_type="ctgan", **kwargs
         )
     else:
-        # Placeholder - in a real implementation, this would use GANs
-        # For demonstration purposes, we'll reuse the statistical method
-        print(
-            "GAN synthesis not fully implemented in this version; "
-            "using statistical method"
+        # Implement GAN-based synthetic data generation
+        try:
+            import tensorflow as tf
+            from tensorflow.keras import layers, optimizers, models
+            from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
+        except ImportError:
+            raise ImportError(
+                "TensorFlow is required for GAN-based synthesis. "
+                "Please install with 'pip install tensorflow'"
+            )
+            
+        # Extract kwargs
+        epochs = kwargs.get('epochs', 300)
+        batch_size = kwargs.get('batch_size', 32)
+        generator_dim = kwargs.get('generator_dim', [128, 128])
+        discriminator_dim = kwargs.get('discriminator_dim', [128, 128])
+        learning_rate = kwargs.get('learning_rate', 0.001)
+        noise_dim = kwargs.get('noise_dim', 100)
+        preserve_dtypes = kwargs.get('preserve_dtypes', True)
+        
+        print(f"Training GAN for {epochs} epochs with batch size {batch_size}...")
+        
+        # Create a working copy of the data
+        data = template.copy()
+        
+        # Handle sensitive columns
+        for col in sensitive_columns:
+            if col in data.columns:
+                data[col] = _generate_sensitive_values(col, data[col], len(data))
+                
+        # Categorize columns
+        numeric_cols = []
+        categorical_cols = []
+        datetime_cols = []
+        
+        # Store original dtypes
+        original_dtypes = data.dtypes.to_dict()
+        
+        # Process data types and identify column categories
+        for col in data.columns:
+            if pd.api.types.is_numeric_dtype(data[col]):
+                numeric_cols.append(col)
+            elif pd.api.types.is_datetime64_dtype(data[col]):
+                datetime_cols.append(col)
+                # Convert datetime to numeric (timestamp)
+                data[col] = data[col].astype(np.int64) // 10**9
+                numeric_cols.append(col)
+            else:
+                categorical_cols.append(col)
+        
+        # Prepare data for GAN
+        # 1. Normalize numeric columns
+        scaler = MinMaxScaler()
+        if numeric_cols:
+            numeric_data = data[numeric_cols].copy()
+            # Fill NaN values with mean for numeric data
+            for col in numeric_cols:
+                if numeric_data[col].isna().any():
+                    numeric_data[col] = numeric_data[col].fillna(numeric_data[col].mean())
+            
+            # Fit scaler on numeric data
+            normalized_numeric = scaler.fit_transform(numeric_data)
+            
+        # 2. One-hot encode categorical columns
+        encoder = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
+        categorical_data = None
+        if categorical_cols:
+            # Fill NaN values with mode for categorical data
+            for col in categorical_cols:
+                if data[col].isna().any():
+                    data[col] = data[col].fillna(data[col].mode()[0])
+            
+            # Fit encoder on categorical data
+            categorical_data = data[categorical_cols].copy()
+            one_hot_data = encoder.fit_transform(categorical_data)
+        
+        # 3. Combine processed data
+        if numeric_cols and categorical_cols:
+            processed_data = np.hstack((normalized_numeric, one_hot_data))
+        elif numeric_cols:
+            processed_data = normalized_numeric
+        else:
+            processed_data = one_hot_data
+        
+        # Get dimensions
+        data_dim = processed_data.shape[1]
+        
+        # Build generator
+        def build_generator(noise_dim, data_dim, generator_dim):
+            model = models.Sequential()
+            model.add(layers.Dense(generator_dim[0], input_dim=noise_dim, activation='relu'))
+            
+            for dim in generator_dim[1:]:
+                model.add(layers.Dense(dim, activation='relu'))
+                model.add(layers.BatchNormalization())
+                model.add(layers.LeakyReLU(alpha=0.2))
+            
+            model.add(layers.Dense(data_dim, activation='tanh'))
+            return model
+        
+        # Build discriminator
+        def build_discriminator(data_dim, discriminator_dim):
+            model = models.Sequential()
+            model.add(layers.Dense(discriminator_dim[0], input_dim=data_dim, activation='relu'))
+            
+            for dim in discriminator_dim[1:]:
+                model.add(layers.Dense(dim, activation='relu'))
+                model.add(layers.LeakyReLU(alpha=0.2))
+                model.add(layers.Dropout(0.3))
+            
+            model.add(layers.Dense(1, activation='sigmoid'))
+            return model
+        
+        # Set up GAN components
+        generator = build_generator(noise_dim, data_dim, generator_dim)
+        discriminator = build_discriminator(data_dim, discriminator_dim)
+        
+        # Compile discriminator
+        discriminator.compile(
+            optimizer=optimizers.Adam(learning_rate=learning_rate),
+            loss='binary_crossentropy',
+            metrics=['accuracy']
         )
-        return _generate_statistical_synthetic(
-            template, num_samples, sensitive_columns, **kwargs
+        
+        # Combined GAN model (only generator is trained through this model)
+        discriminator.trainable = False
+        
+        # Create GAN
+        gan_input = tf.keras.Input(shape=(noise_dim,))
+        generated_data = generator(gan_input)
+        gan_output = discriminator(generated_data)
+        gan = models.Model(gan_input, gan_output)
+        
+        # Compile GAN
+        gan.compile(
+            optimizer=optimizers.Adam(learning_rate=learning_rate),
+            loss='binary_crossentropy'
         )
+        
+        # Convert to TensorFlow dataset for better performance
+        train_dataset = tf.data.Dataset.from_tensor_slices(processed_data)
+        train_dataset = train_dataset.shuffle(buffer_size=len(processed_data))
+        train_dataset = train_dataset.batch(batch_size)
+        
+        # Training loop
+        for epoch in range(epochs):
+            # Initialize metrics
+            d_loss_sum = 0
+            g_loss_sum = 0
+            batch_count = 0
+            
+            for real_batch in train_dataset:
+                batch_size = tf.shape(real_batch)[0]
+                
+                # Train discriminator on real data
+                real_labels = tf.ones((batch_size, 1))
+                d_loss_real = discriminator.train_on_batch(real_batch, real_labels)[0]
+                
+                # Train discriminator on fake data
+                noise = tf.random.normal((batch_size, noise_dim))
+                fake_data = generator.predict(noise, verbose=0)
+                fake_labels = tf.zeros((batch_size, 1))
+                d_loss_fake = discriminator.train_on_batch(fake_data, fake_labels)[0]
+                
+                d_loss = 0.5 * (d_loss_real + d_loss_fake)
+                
+                # Train generator
+                noise = tf.random.normal((batch_size, noise_dim))
+                gan_labels = tf.ones((batch_size, 1))
+                g_loss = gan.train_on_batch(noise, gan_labels)
+                
+                # Update sums for average calculation
+                d_loss_sum += d_loss
+                g_loss_sum += g_loss
+                batch_count += 1
+            
+            # Print progress every 20 epochs
+            if (epoch + 1) % 20 == 0:
+                d_loss_avg = d_loss_sum / batch_count
+                g_loss_avg = g_loss_sum / batch_count
+                print(f"Epoch {epoch+1}/{epochs} - D Loss: {d_loss_avg:.4f}, G Loss: {g_loss_avg:.4f}")
+        
+        # Generate synthetic data
+        noise = tf.random.normal((num_samples, noise_dim))
+        synthetic_data_raw = generator.predict(noise, verbose=0)
+        
+        # Convert back to DataFrame with original structure
+        synthetic_df = pd.DataFrame()
+        
+        # Process numeric columns
+        if numeric_cols:
+            numeric_count = len(numeric_cols)
+            synthetic_numeric = synthetic_data_raw[:, :numeric_count]
+            
+            # Inverse transform to original scale
+            synthetic_numeric = scaler.inverse_transform(
+                np.clip(synthetic_numeric, -1, 1)  # Clip in tanh range
+            )
+            
+            # Add to DataFrame
+            for i, col in enumerate(numeric_cols):
+                synthetic_df[col] = synthetic_numeric[:, i]
+        
+        # Process categorical columns
+        if categorical_cols:
+            start_idx = len(numeric_cols) if numeric_cols else 0
+            categorical_synthetic = synthetic_data_raw[:, start_idx:]
+            
+            # Convert continuous values to one-hot encoded categorical
+            # For each category, find nearest one-hot encoding
+            threshold = 0.5
+            categorical_synthetic = (categorical_synthetic > threshold).astype(float)
+            
+            # Inverse transform to original categories
+            decoded_categorical = encoder.inverse_transform(categorical_synthetic)
+            
+            # Add to DataFrame
+            for i, col in enumerate(categorical_cols):
+                synthetic_df[col] = decoded_categorical[:, i]
+        
+        # Convert datetime columns back
+        for col in datetime_cols:
+            if col in synthetic_df.columns:
+                synthetic_df[col] = pd.to_datetime(synthetic_df[col].astype(np.int64) * 10**9)
+        
+        # Restore original dtypes if requested
+        if preserve_dtypes:
+            for col, dtype in original_dtypes.items():
+                if col in synthetic_df.columns:
+                    try:
+                        if pd.api.types.is_categorical_dtype(dtype):
+                            categories = template[col].cat.categories
+                            synthetic_df[col] = pd.Categorical(
+                                synthetic_df[col], 
+                                categories=categories
+                            )
+                        elif pd.api.types.is_integer_dtype(dtype) and col not in datetime_cols:
+                            synthetic_df[col] = synthetic_df[col].round().astype(dtype)
+                        elif not pd.api.types.is_datetime64_dtype(dtype) and col not in datetime_cols:
+                            synthetic_df[col] = synthetic_df[col].astype(dtype)
+                    except (TypeError, ValueError):
+                        # Skip if type conversion fails
+                        pass
+        
+        # Handle sensitive columns for the final synthetic data
+        for col in sensitive_columns:
+            if col in synthetic_df.columns:
+                synthetic_df[col] = _generate_sensitive_values(col, template[col], num_samples)
+        
+        return synthetic_df
 
 
 def _generate_copula_synthetic(

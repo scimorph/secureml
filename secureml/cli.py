@@ -255,7 +255,7 @@ def synthetic():
 @click.argument("output_file", type=click.Path())
 @click.option(
     "--method",
-    type=click.Choice(["simple", "statistical", "sdv-copula", "sdv-ctgan"]),
+    type=click.Choice(["simple", "statistical", "sdv-copula", "sdv-ctgan", "gan"]),
     default="statistical",
     help="Generation method (default: statistical)",
 )
@@ -307,6 +307,30 @@ def synthetic():
     help="Max unique values to treat as categorical (statistical method)",
 )
 @click.option(
+    "--epochs",
+    type=int,
+    default=300,
+    help="Number of training epochs for GAN method",
+)
+@click.option(
+    "--batch-size",
+    type=int,
+    default=32,
+    help="Batch size for GAN training",
+)
+@click.option(
+    "--learning-rate",
+    type=float,
+    default=0.001,
+    help="Learning rate for GAN optimizer",
+)
+@click.option(
+    "--noise-dim",
+    type=int,
+    default=100,
+    help="Dimension of noise input for GAN generator",
+)
+@click.option(
     "--format",
     type=click.Choice(["csv", "json", "parquet"]),
     default="csv",
@@ -324,6 +348,10 @@ def generate_data(
     preserve_outliers,
     handle_skewness,
     categorical_threshold,
+    epochs,
+    batch_size,
+    learning_rate,
+    noise_dim,
     format
 ):
     """Generate synthetic data based on a real dataset.
@@ -344,6 +372,11 @@ def generate_data(
         secureml synthetic generate real_data.csv synthetic_data.csv \\
         --method statistical --preserve-outliers \\
         --handle-skewness --categorical-threshold 15
+        
+    GAN-based generation:
+        secureml synthetic generate real_data.csv synthetic_data.csv \\
+        --method gan --epochs 500 --batch-size 64 \\
+        --learning-rate 0.0002 --noise-dim 128
     """
     click.echo(f"Reading template data from {input_file}...")
     
@@ -368,13 +401,23 @@ def generate_data(
         "sample_size": sensitivity_sample_size
     }
     
+    # Method-specific parameters
+    method_params = {}
+    
     # Statistical modeling parameters
-    statistical_params = {}
     if method == "statistical":
-        statistical_params = {
+        method_params = {
             "preserve_outliers": preserve_outliers,
             "handle_skewness": handle_skewness,
             "categorical_threshold": categorical_threshold,
+        }
+    # GAN parameters
+    elif method == "gan":
+        method_params = {
+            "epochs": epochs,
+            "batch_size": batch_size,
+            "learning_rate": learning_rate,
+            "noise_dim": noise_dim,
         }
     
     click.echo(
@@ -388,7 +431,7 @@ def generate_data(
         method=method,
         sensitive_columns=list(sensitive) if sensitive else None,
         sensitivity_detection=sensitivity_detection,
-        **statistical_params
+        **method_params
     )
     
     # Save output in the requested format

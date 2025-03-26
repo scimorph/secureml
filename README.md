@@ -114,11 +114,6 @@ Generate synthetic data based on real data patterns:
 # Generate synthetic data using statistical modeling
 secureml synthetic generate real_data.csv synthetic_data.csv \
   --method statistical \
-  --samples 5000
-
-# Use advanced statistical modeling options
-secureml synthetic generate real_data.csv synthetic_data.csv \
-  --method statistical \
   --preserve-outliers \
   --handle-skewness \
   --categorical-threshold 15
@@ -128,6 +123,14 @@ secureml synthetic generate real_data.csv synthetic_data.csv \
   --method sdv-copula \
   --samples 5000 \
   --sensitive name --sensitive email
+
+# Generate synthetic data using custom GANs
+secureml synthetic generate real_data.csv synthetic_data.csv \
+  --method gan \
+  --epochs 500 \
+  --batch-size 64 \
+  --learning-rate 0.0002 \
+  --noise-dim 128
 
 # Use automatic sensitive data detection with custom parameters
 secureml synthetic generate real_data.csv synthetic_data.csv \
@@ -547,8 +550,23 @@ synthetic_data = generate_synthetic_data(
     sensitive_columns=["name", "email", "phone_number"]
 )
 
-# For more complex patterns, use GAN-based approaches
+# Generate synthetic data using custom GANs with advanced configuration
 gan_synthetic = generate_synthetic_data(
+    template=real_data,
+    num_samples=1000,
+    method="gan",
+    # GAN configuration
+    epochs=500,               # Number of training epochs
+    batch_size=64,            # Batch size for training
+    learning_rate=0.0002,     # Learning rate for optimizer
+    noise_dim=128,            # Size of the noise vector input to generator
+    generator_dim=[256, 256], # Architecture of the generator network
+    discriminator_dim=[256, 128], # Architecture of the discriminator network
+    preserve_dtypes=True      # Preserve original data types in output
+)
+
+# For more complex patterns, use SDV's GAN-based approaches
+ctgan_synthetic = generate_synthetic_data(
     template=real_data,
     num_samples=1000,
     method="sdv-ctgan"
