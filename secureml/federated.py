@@ -389,7 +389,7 @@ def _create_pytorch_client(
     epsilon: float = 1.0,
     delta: float = 1e-5,
     **kwargs: Any,
-) -> fl.client.Client:
+) -> 'fl.client.Client':
     """
     Create a Flower client for PyTorch models.
     
@@ -691,7 +691,7 @@ def _create_tensorflow_client(
     epsilon: float = 1.0,
     delta: float = 1e-5,
     **kwargs: Any,
-) -> fl.client.Client:
+) -> 'fl.client.Client':
     """
     Create a Flower client for TensorFlow models.
     
@@ -957,7 +957,7 @@ def _create_pytorch_client_fn(
     client_datasets: Dict[str, Union[pd.DataFrame, np.ndarray]],
     config: FederatedConfig,
     **kwargs: Any,
-) -> Callable[[str], fl.client.Client]:
+) -> Callable[[str], 'fl.client.Client']:
     """
     Create a function that returns PyTorch clients for simulation.
     
@@ -972,7 +972,7 @@ def _create_pytorch_client_fn(
     """
     import copy
 
-    def client_fn(cid: str) -> fl.client.Client:
+    def client_fn(cid: str) -> 'fl.client.Client':
         # Create a copy of the model for this client
         client_model = copy.deepcopy(model)
         
@@ -1008,7 +1008,7 @@ def _create_tensorflow_client_fn(
     client_datasets: Dict[str, Union[pd.DataFrame, np.ndarray]],
     config: FederatedConfig,
     **kwargs: Any,
-) -> Callable[[str], fl.client.Client]:
+) -> Callable[[str], 'fl.client.Client']:
     """
     Create a function that returns TensorFlow clients for simulation.
     
@@ -1023,7 +1023,7 @@ def _create_tensorflow_client_fn(
     """
     import copy
 
-    def client_fn(cid: str) -> fl.client.Client:
+    def client_fn(cid: str) -> 'fl.client.Client':
         # Create a copy of the model for this client
         client_model = tf.keras.models.clone_model(model)
         client_model.set_weights(model.get_weights())
@@ -1059,7 +1059,7 @@ def _create_pytorch_server(
     model: Any,
     config: FederatedConfig,
     **kwargs: Any,
-) -> fl.server.Server:
+) -> 'fl.server.Server':
     """
     Create a Flower server for coordinating federated learning with PyTorch models.
     
@@ -1122,7 +1122,7 @@ def _create_tensorflow_server(
     model: Any,
     config: FederatedConfig,
     **kwargs: Any,
-) -> fl.server.Server:
+) -> 'fl.server.Server':
     """
     Create a Flower server for coordinating federated learning with TensorFlow models.
     
