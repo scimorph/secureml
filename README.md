@@ -341,6 +341,92 @@ start_federated_client(
 )
 ```
 
+#### Advanced Weight Update Strategies
+
+SecureML provides sophisticated weight update mechanisms for federated learning to improve convergence and stability. These strategies can be especially valuable in challenging federated scenarios with heterogeneous data distributions or when training complex models.
+
+```python
+from secureml import train_federated
+from secureml.federated import FederatedConfig
+
+# Configure federated learning with Exponential Moving Average (EMA) weight updates
+ema_config = FederatedConfig(
+    num_rounds=10,
+    # Weight update configuration
+    weight_update_strategy="ema",  # Use exponential moving average
+    weight_mixing_rate=0.5,  # 50% mix of new weights, 50% of old weights
+    warmup_rounds=2  # Gradually increase mixing rate over first 2 rounds
+)
+
+# Configure federated learning with Momentum-based weight updates
+momentum_config = FederatedConfig(
+    num_rounds=10,
+    # Weight update configuration
+    weight_update_strategy="momentum",  # Use momentum-based updates
+    weight_mixing_rate=0.1,  # Small update step size
+    weight_momentum=0.9,  # High momentum coefficient
+    # Constrain updates to prevent instability
+    apply_weight_constraints=True,
+    max_weight_change=0.3  # Maximum 30% change in any weight
+)
+
+# Train with preferred weight update strategy
+trained_model = train_federated(
+    model=model,
+    client_data_fn=get_client_data,
+    config=momentum_config  # Use the momentum configuration
+)
+```
+
+##### Weight Update Strategies
+
+SecureML supports three different strategies for updating model weights in federated learning:
+
+1. **Direct Updates** (`weight_update_strategy="direct"`): The simplest strategy, where client models directly adopt the weights received from the server. This is the classic federated learning approach.
+
+2. **Exponential Moving Average (EMA)** (`weight_update_strategy="ema"`): A weighted average between old and new weights. This creates smoother updates and can improve training stability:
+   ```
+   updated_weight = (1 - mixing_rate) * old_weight + mixing_rate * new_weight
+   ```
+
+3. **Momentum-Based Updates** (`weight_update_strategy="momentum"`): Uses a momentum term to accelerate training and avoid local minima:
+   ```
+   momentum_update = momentum * previous_update + mixing_rate * (new_weight - old_weight)
+   updated_weight = old_weight + momentum_update
+   ```
+
+##### Key Configuration Parameters
+
+- **`weight_mixing_rate`**: Controls how much of the new weights to incorporate (0.0 to 1.0). Lower values make smaller, more conservative updates.
+
+- **`weight_momentum`**: For momentum strategy, determines how much previous updates influence current ones (typically 0.9 to 0.99).
+
+- **`warmup_rounds`**: Number of initial rounds with gradually increasing mixing rates. Useful for stabilizing early training.
+
+- **`apply_weight_constraints`**: When `True`, prevents any weight from changing too dramatically in a single update.
+
+- **`max_weight_change`**: Maximum relative change allowed in any weight when constraints are enabled (e.g., 0.2 = 20% maximum change).
+
+##### Choosing a Strategy
+
+- Use **Direct** for simpler models and homogeneous data distributions.
+- Use **EMA** for improved stability and when working with sensitive data that might create noisy updates.
+- Use **Momentum** for faster convergence on complex problems and when clients have heterogeneous data distributions.
+
+For maximum stability, especially with differential privacy enabled, combine momentum with weight constraints:
+
+```python
+config = FederatedConfig(
+    num_rounds=20,
+    apply_differential_privacy=True,
+    epsilon=1.0,
+    weight_update_strategy="momentum", 
+    weight_momentum=0.95,
+    apply_weight_constraints=True,
+    max_weight_change=0.25
+)
+```
+
 ### Synthetic Data Generation
 
 SecureML provides multiple approaches to synthetic data generation, from simple Faker-based methods to advanced statistical modeling with the Synthetic Data Vault (SDV).

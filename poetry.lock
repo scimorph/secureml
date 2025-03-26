@@ -3779,4 +3779,4 @@ pdf = ["weasyprint"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.12"
-content-hash = "d1394459866527a94e580678964c4a155adec62b11ec1b9d1029f172877c9864"
+content-hash = "25137bf43b16e7d3dae6498e532da8bdba84f5109052a68c2c2addf216fc7fdd"

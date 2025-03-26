@@ -18,6 +18,7 @@ import pandas as pd
 _HAS_FLOWER = False
 _HAS_PYTORCH = False
 _HAS_TENSORFLOW = False
+_HAS_SKLEARN = False
 
 # Try importing Flower
 try:
@@ -43,6 +44,13 @@ try:
 except ImportError:
     pass
 
+# Try importing scikit-learn
+try:
+    from sklearn.model_selection import train_test_split
+    _HAS_SKLEARN = True
+except ImportError:
+    pass
+
 
 class FederatedConfig:
     """
@@ -60,6 +68,13 @@ class FederatedConfig:
         apply_differential_privacy: bool = False,
         epsilon: float = 1.0,
         delta: float = 1e-5,
+        # Weight update configuration
+        weight_update_strategy: str = "direct",  # Options: "direct", "ema", "momentum"
+        weight_mixing_rate: float = 1.0,  # Weight for new parameters (0.0 to 1.0)
+        weight_momentum: float = 0.9,  # Momentum coefficient for momentum strategy
+        warmup_rounds: int = 0,  # Number of warmup rounds with lower mixing rates
+        apply_weight_constraints: bool = False,  # Whether to constrain weight updates
+        max_weight_change: float = 0.2,  # Maximum relative change in weights (if constraints applied)
         **kwargs: Any,
     ):
         """
@@ -75,6 +90,12 @@ class FederatedConfig:
             apply_differential_privacy: Whether to apply differential privacy
             epsilon: Privacy budget for differential privacy (if enabled)
             delta: Privacy failure probability for differential privacy (if enabled)
+            weight_update_strategy: Strategy for weight updates ("direct", "ema", "momentum")
+            weight_mixing_rate: Weight for new parameters in mixing strategies
+            weight_momentum: Momentum coefficient for momentum strategy
+            warmup_rounds: Number of warmup rounds with gradual mixing rates
+            apply_weight_constraints: Whether to constrain weight updates
+            max_weight_change: Maximum relative change allowed in weights
             **kwargs: Additional parameters for specific federated learning setups
         """
         self.num_rounds = num_rounds
@@ -86,6 +107,15 @@ class FederatedConfig:
         self.apply_differential_privacy = apply_differential_privacy
         self.epsilon = epsilon
         self.delta = delta
+        
+        # Weight update configurations
+        self.weight_update_strategy = weight_update_strategy
+        self.weight_mixing_rate = weight_mixing_rate
+        self.weight_momentum = weight_momentum
+        self.warmup_rounds = warmup_rounds
+        self.apply_weight_constraints = apply_weight_constraints
+        self.max_weight_change = max_weight_change
+        
         self.extra_kwargs = kwargs
 
 
@@ -388,14 +418,66 @@ def _create_pytorch_client(
     if "test_data" in kwargs:
         test_data = kwargs["test_data"]
     elif kwargs.get("test_split", 0.0) > 0:
-        # Simple split - in practice you'd want to use proper stratification
-        split_idx = int(len(data) * (1 - kwargs.get("test_split", 0.0)))
+        # Use stratified split for classification tasks
+        test_split = kwargs.get("test_split", 0.0)
+        
         if isinstance(data, pd.DataFrame):
-            train_data = data.iloc[:split_idx]
-            test_data = data.iloc[split_idx:]
+            # Get target column
+            target_col = kwargs.get("target_column")
+            
+            if target_col is not None and target_col in data.columns:
+                y = data[target_col]
+                stratify = y if _HAS_SKLEARN else None
+                
+                if stratify is not None:
+                    # Use scikit-learn's stratified split
+                    train_data, test_data = train_test_split(
+                        data, 
+                        test_size=test_split,
+                        stratify=stratify,
+                        random_state=kwargs.get("random_state", 42)
+                    )
+                else:
+                    # Fallback to simple split if sklearn not available
+                    split_idx = int(len(data) * (1 - test_split))
+                    train_data = data.iloc[:split_idx]
+                    test_data = data.iloc[split_idx:]
+            else:
+                # Assume last column is target for stratification
+                y = data.iloc[:, -1]
+                stratify = y if _HAS_SKLEARN else None
+                
+                if stratify is not None:
+                    # Use scikit-learn's stratified split
+                    train_data, test_data = train_test_split(
+                        data, 
+                        test_size=test_split,
+                        stratify=stratify,
+                        random_state=kwargs.get("random_state", 42)
+                    )
+                else:
+                    # Fallback to simple split if sklearn not available
+                    split_idx = int(len(data) * (1 - test_split))
+                    train_data = data.iloc[:split_idx]
+                    test_data = data.iloc[split_idx:]
         else:  # numpy array
-            train_data = data[:split_idx]
-            test_data = data[split_idx:]
+            # Assume last column is target for stratification
+            y = data[:, -1]
+            stratify = y if _HAS_SKLEARN else None
+            
+            if stratify is not None:
+                # Use scikit-learn's stratified split
+                train_data, test_data = train_test_split(
+                    data, 
+                    test_size=test_split,
+                    stratify=stratify,
+                    random_state=kwargs.get("random_state", 42)
+                )
+            else:
+                # Fallback to simple split if sklearn not available
+                split_idx = int(len(data) * (1 - test_split))
+                train_data = data[:split_idx]
+                test_data = data[split_idx:]
 
     # Convert data to PyTorch format if needed
     x_train, y_train = _prepare_data_for_pytorch(train_data, **kwargs)
@@ -457,6 +539,15 @@ def _create_pytorch_client(
             max_grad_norm=kwargs.get("max_grad_norm", 1.0),
         )
 
+    # Get weight update configuration from kwargs or use defaults
+    weight_update_strategy = kwargs.get("weight_update_strategy", "direct")
+    weight_mixing_rate = kwargs.get("weight_mixing_rate", 1.0)
+    weight_momentum = kwargs.get("weight_momentum", 0.9)
+    apply_weight_constraints = kwargs.get("apply_weight_constraints", False)
+    max_weight_change = kwargs.get("max_weight_change", 0.2)
+    round_number = [0]  # Use a list to make it mutable in the closure
+    previous_weights = {}  # Store previous weights for momentum
+    
     # Create the NumPyClient
     class PytorchClient(NumPyClient):
         def get_parameters(self, config):
@@ -464,10 +555,85 @@ def _create_pytorch_client(
             return [val.cpu().numpy() for _, val in model.state_dict().items()]
 
         def set_parameters(self, parameters):
-            """Set model parameters from a list of NumPy arrays."""
-            params_dict = zip(model.state_dict().keys(), parameters)
-            state_dict = {k: torch.tensor(v) for k, v in params_dict}
-            model.load_state_dict(state_dict, strict=True)
+            """
+            Set model parameters with sophisticated update strategies.
+            
+            Supports different weight update strategies:
+            - direct: Directly set new weights
+            - ema: Exponential moving average of weights
+            - momentum: Use momentum for smoother updates
+            
+            Also supports:
+            - Warm-up periods with increasing mixing rates
+            - Weight change constraints to prevent large updates
+            """
+            # Get model state dict keys
+            keys = list(model.state_dict().keys())
+            
+            # Initialize state_dict with current values
+            current_state_dict = {k: v.clone() for k, v in model.state_dict().items()}
+            
+            # Calculate adaptive mixing rate for warm-up
+            current_mixing_rate = weight_mixing_rate
+            warmup_rounds = kwargs.get("warmup_rounds", 0)
+            if warmup_rounds > 0 and round_number[0] < warmup_rounds:
+                # Gradually increase mixing rate during warm-up
+                current_mixing_rate = weight_mixing_rate * (round_number[0] + 1) / (warmup_rounds + 1)
+            
+            # Prepare new state dict
+            new_state_dict = {}
+            
+            for i, (key, current_tensor) in enumerate(current_state_dict.items()):
+                # Convert parameter to tensor
+                new_tensor = torch.tensor(parameters[i], dtype=current_tensor.dtype, device=current_tensor.device)
+                
+                if weight_update_strategy == "direct":
+                    # Simple direct update
+                    updated_tensor = new_tensor
+                
+                elif weight_update_strategy == "ema":
+                    # Exponential moving average update
+                    updated_tensor = (1 - current_mixing_rate) * current_tensor + current_mixing_rate * new_tensor
+                
+                elif weight_update_strategy == "momentum":
+                    # Momentum-based update
+                    if key not in previous_weights:
+                        # Initialize on first update
+                        previous_weights[key] = current_tensor.clone()
+                        momentum_update = new_tensor - current_tensor
+                    else:
+                        # Apply momentum
+                        previous_update = previous_weights[key] - current_tensor
+                        momentum_update = weight_momentum * previous_update + current_mixing_rate * (new_tensor - current_tensor)
+                    
+                    updated_tensor = current_tensor + momentum_update
+                    # Store current tensor for next round
+                    previous_weights[key] = current_tensor.clone()
+                
+                else:
+                    # Fallback to direct update for unknown strategies
+                    updated_tensor = new_tensor
+                
+                # Apply weight constraints if enabled
+                if apply_weight_constraints and current_tensor.numel() > 0:
+                    # Calculate weight change ratio
+                    weight_change = torch.abs(updated_tensor - current_tensor) / (torch.abs(current_tensor) + 1e-8)
+                    
+                    # Apply clipping to limit maximum change
+                    mask = weight_change > max_weight_change
+                    if mask.any():
+                        # Apply maximum change in the appropriate direction
+                        direction = torch.sign(updated_tensor - current_tensor)
+                        max_allowed = current_tensor + direction * max_weight_change * torch.abs(current_tensor)
+                        updated_tensor = torch.where(mask, max_allowed, updated_tensor)
+                
+                new_state_dict[key] = updated_tensor
+            
+            # Update the model with new parameters
+            model.load_state_dict(new_state_dict, strict=True)
+            
+            # Increment round number
+            round_number[0] += 1
 
         def fit(self, parameters, config):
             """Train the model on the local dataset."""
@@ -554,14 +720,66 @@ def _create_tensorflow_client(
     if "test_data" in kwargs:
         test_data = kwargs["test_data"]
     elif kwargs.get("test_split", 0.0) > 0:
-        # Simple split - in practice you'd want to use proper stratification
-        split_idx = int(len(data) * (1 - kwargs.get("test_split", 0.0)))
+        # Use stratified split for classification tasks
+        test_split = kwargs.get("test_split", 0.0)
+        
         if isinstance(data, pd.DataFrame):
-            train_data = data.iloc[:split_idx]
-            test_data = data.iloc[split_idx:]
+            # Get target column
+            target_col = kwargs.get("target_column")
+            
+            if target_col is not None and target_col in data.columns:
+                y = data[target_col]
+                stratify = y if _HAS_SKLEARN else None
+                
+                if stratify is not None:
+                    # Use scikit-learn's stratified split
+                    train_data, test_data = train_test_split(
+                        data, 
+                        test_size=test_split,
+                        stratify=stratify,
+                        random_state=kwargs.get("random_state", 42)
+                    )
+                else:
+                    # Fallback to simple split if sklearn not available
+                    split_idx = int(len(data) * (1 - test_split))
+                    train_data = data.iloc[:split_idx]
+                    test_data = data.iloc[split_idx:]
+            else:
+                # Assume last column is target for stratification
+                y = data.iloc[:, -1]
+                stratify = y if _HAS_SKLEARN else None
+                
+                if stratify is not None:
+                    # Use scikit-learn's stratified split
+                    train_data, test_data = train_test_split(
+                        data, 
+                        test_size=test_split,
+                        stratify=stratify,
+                        random_state=kwargs.get("random_state", 42)
+                    )
+                else:
+                    # Fallback to simple split if sklearn not available
+                    split_idx = int(len(data) * (1 - test_split))
+                    train_data = data.iloc[:split_idx]
+                    test_data = data.iloc[split_idx:]
         else:  # numpy array
-            train_data = data[:split_idx]
-            test_data = data[split_idx:]
+            # Assume last column is target for stratification
+            y = data[:, -1]
+            stratify = y if _HAS_SKLEARN else None
+            
+            if stratify is not None:
+                # Use scikit-learn's stratified split
+                train_data, test_data = train_test_split(
+                    data, 
+                    test_size=test_split,
+                    stratify=stratify,
+                    random_state=kwargs.get("random_state", 42)
+                )
+            else:
+                # Fallback to simple split if sklearn not available
+                split_idx = int(len(data) * (1 - test_split))
+                train_data = data[:split_idx]
+                test_data = data[split_idx:]
 
     # Prepare data
     x_train, y_train = _prepare_data_for_tensorflow(train_data, **kwargs)
@@ -606,6 +824,15 @@ def _create_tensorflow_client(
         metrics=kwargs.get("metrics", ["accuracy"]),
     )
 
+    # Get weight update configuration from kwargs or use defaults
+    weight_update_strategy = kwargs.get("weight_update_strategy", "direct")
+    weight_mixing_rate = kwargs.get("weight_mixing_rate", 1.0)
+    weight_momentum = kwargs.get("weight_momentum", 0.9)
+    apply_weight_constraints = kwargs.get("apply_weight_constraints", False)
+    max_weight_change = kwargs.get("max_weight_change", 0.2)
+    round_number = [0]  # Use a list to make it mutable in the closure
+    previous_weights = {}  # Dictionary to store previous weights for momentum
+
     # Create the NumPyClient
     class TensorFlowClient(NumPyClient):
         def get_parameters(self, config):
@@ -613,11 +840,83 @@ def _create_tensorflow_client(
             return [v.numpy() for v in model.weights]
 
         def set_parameters(self, parameters):
-            """Set model parameters from a list of NumPy arrays."""
-            # This is a simplified approach - in real code you might need more
-            # sophisticated weight updating
+            """
+            Set model parameters with sophisticated update strategies.
+            
+            Supports different weight update strategies:
+            - direct: Directly set new weights
+            - ema: Exponential moving average of weights
+            - momentum: Use momentum for smoother updates
+            
+            Also supports:
+            - Warm-up periods with increasing mixing rates
+            - Weight change constraints to prevent large updates
+            """
+            # Calculate adaptive mixing rate for warm-up
+            current_mixing_rate = weight_mixing_rate
+            warmup_rounds = kwargs.get("warmup_rounds", 0)
+            if warmup_rounds > 0 and round_number[0] < warmup_rounds:
+                # Gradually increase mixing rate during warm-up
+                current_mixing_rate = weight_mixing_rate * (round_number[0] + 1) / (warmup_rounds + 1)
+            
+            # Get current weights for all layers
+            current_weights = [w.numpy() for w in model.weights]
+            
+            # Initialize dictionary mapping layer index to name for tracking
+            if not previous_weights and weight_update_strategy == "momentum":
+                for i, w in enumerate(model.weights):
+                    weight_key = f"layer_{i}"
+                    previous_weights[weight_key] = current_weights[i].copy()
+            
+            # Prepare updated weights
+            updated_weights = []
+            
+            for i, (current_w, new_w) in enumerate(zip(current_weights, parameters)):
+                weight_key = f"layer_{i}"
+                
+                if weight_update_strategy == "direct":
+                    # Direct update
+                    updated_w = new_w
+                
+                elif weight_update_strategy == "ema":
+                    # Exponential moving average
+                    updated_w = (1 - current_mixing_rate) * current_w + current_mixing_rate * new_w
+                
+                elif weight_update_strategy == "momentum":
+                    # Momentum-based update
+                    previous_w = previous_weights[weight_key]
+                    previous_update = previous_w - current_w
+                    momentum_update = weight_momentum * previous_update + current_mixing_rate * (new_w - current_w)
+                    updated_w = current_w + momentum_update
+                    
+                    # Save current weights for next round
+                    previous_weights[weight_key] = current_w.copy()
+                
+                else:
+                    # Fallback to direct update
+                    updated_w = new_w
+                
+                # Apply weight constraints if enabled
+                if apply_weight_constraints and current_w.size > 0:
+                    # Calculate weight change ratio (avoiding division by zero)
+                    weight_change = np.abs(updated_w - current_w) / (np.abs(current_w) + 1e-8)
+                    
+                    # Apply clipping to limit maximum change
+                    mask = weight_change > max_weight_change
+                    if np.any(mask):
+                        # Apply maximum change in the appropriate direction
+                        direction = np.sign(updated_w - current_w)
+                        max_allowed = current_w + direction * max_weight_change * np.abs(current_w)
+                        updated_w = np.where(mask, max_allowed, updated_w)
+                
+                updated_weights.append(updated_w)
+            
+            # Apply updated weights to the model
             for i, w in enumerate(model.weights):
-                w.assign(parameters[i])
+                w.assign(updated_weights[i])
+            
+            # Increment round number
+            round_number[0] += 1
 
         def fit(self, parameters, config):
             """Train the model on the local dataset."""
@@ -680,6 +979,17 @@ def _create_pytorch_client_fn(
         # Get this client's dataset
         data = client_datasets.get(cid, next(iter(client_datasets.values())))
         
+        # Pass weight update configuration to client
+        client_kwargs = {
+            **kwargs,
+            "weight_update_strategy": config.weight_update_strategy,
+            "weight_mixing_rate": config.weight_mixing_rate,
+            "weight_momentum": config.weight_momentum,
+            "warmup_rounds": config.warmup_rounds,
+            "apply_weight_constraints": config.apply_weight_constraints,
+            "max_weight_change": config.max_weight_change,
+        }
+        
         # Create the client
         return _create_pytorch_client(
             model=client_model,
@@ -687,7 +997,7 @@ def _create_pytorch_client_fn(
             apply_differential_privacy=config.apply_differential_privacy,
             epsilon=config.epsilon,
             delta=config.delta,
-            **kwargs
+            **client_kwargs
         )
     
     return client_fn
@@ -721,6 +1031,17 @@ def _create_tensorflow_client_fn(
         # Get this client's dataset
         data = client_datasets.get(cid, next(iter(client_datasets.values())))
         
+        # Pass weight update configuration to client
+        client_kwargs = {
+            **kwargs,
+            "weight_update_strategy": config.weight_update_strategy,
+            "weight_mixing_rate": config.weight_mixing_rate,
+            "weight_momentum": config.weight_momentum,
+            "warmup_rounds": config.warmup_rounds,
+            "apply_weight_constraints": config.apply_weight_constraints,
+            "max_weight_change": config.max_weight_change,
+        }
+        
         # Create the client
         return _create_tensorflow_client(
             model=client_model,
@@ -728,7 +1049,7 @@ def _create_tensorflow_client_fn(
             apply_differential_privacy=config.apply_differential_privacy,
             epsilon=config.epsilon,
             delta=config.delta,
-            **kwargs
+            **client_kwargs
         )
     
     return client_fn

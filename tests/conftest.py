@@ -125,4 +125,193 @@ def simple_model():
                 {"type": "ReLU"},
                 {"type": "Linear", "in_features": 20, "out_features": 1}
             ]
-        } 
+        }
+
+
+@pytest.fixture
+def sample_data():
+    """
+    Create a sample DataFrame for testing anonymization functionality.
+    
+    Returns:
+        pd.DataFrame: A DataFrame with various data types including potentially
+                     sensitive information.
+    """
+    # Set a seed for reproducibility
+    np.random.seed(42)
+    
+    # Create a sample dataset
+    n_rows = 50
+    data = pd.DataFrame({
+        "name": [f"Person {i}" for i in range(n_rows)],
+        "email": [f"person{i}@example.com" for i in range(n_rows)],
+        "age": np.random.randint(18, 80, n_rows),
+        "zip_code": np.random.choice(["12345", "23456", "34567", "45678", "56789"], n_rows),
+        "income": np.random.normal(70000, 15000, n_rows).astype(int),
+        "credit_card": [f"**** **** **** {i:04d}" for i in range(n_rows)],
+        "medical_condition": np.random.choice(
+            ["None", "Diabetes", "Hypertension", "Asthma", "Allergies"], n_rows
+        ),
+        "purchase_amount": np.random.exponential(100, n_rows),
+        "timestamp": pd.date_range(start="2020-01-01", periods=n_rows),
+    })
+    
+    return data
+
+
+@pytest.fixture
+def sample_data_dict(sample_data):
+    """
+    Convert the sample DataFrame to a list of dictionaries for testing.
+    
+    Args:
+        sample_data: The sample DataFrame fixture
+        
+    Returns:
+        list: A list of dictionaries representing the rows of the DataFrame
+    """
+    return sample_data.to_dict("records")
+
+
+@pytest.fixture
+def time_series_data():
+    """
+    Create a sample time series DataFrame for testing.
+    
+    Returns:
+        pd.DataFrame: A DataFrame representing time series data for multiple entities
+    """
+    np.random.seed(42)
+    dates = pd.date_range(start="2020-01-01", periods=30)
+    data = pd.DataFrame({
+        "date": np.repeat(dates, 5),
+        "user_id": np.tile(range(5), 30),
+        "value": np.random.normal(100, 20, 30*5)
+    })
+    return data
+
+
+@pytest.fixture
+def hierarchical_data():
+    """
+    Create a sample DataFrame with hierarchical categorical data.
+    
+    Returns:
+        pd.DataFrame: A DataFrame with hierarchical categorical columns
+    """
+    np.random.seed(42)
+    n_rows = 100
+    
+    # Define hierarchies
+    city_to_state = {
+        "New York": "NY", "Buffalo": "NY", "Albany": "NY",
+        "Los Angeles": "CA", "San Francisco": "CA", "San Diego": "CA",
+        "Chicago": "IL", "Springfield": "IL", "Peoria": "IL",
+        "Miami": "FL", "Orlando": "FL", "Tampa": "FL"
+    }
+    
+    state_to_region = {
+        "NY": "Northeast", "MA": "Northeast", "CT": "Northeast",
+        "CA": "West", "OR": "West", "WA": "West",
+        "IL": "Midwest", "OH": "Midwest", "MI": "Midwest",
+        "FL": "South", "GA": "South", "TX": "South"
+    }
+    
+    # Generate city data and create corresponding state and region
+    cities = list(city_to_state.keys())
+    city_data = np.random.choice(cities, n_rows)
+    state_data = [city_to_state[city] for city in city_data]
+    region_data = [state_to_region[state] for state in state_data]
+    
+    # Create the DataFrame
+    data = pd.DataFrame({
+        "id": range(n_rows),
+        "city": city_data,
+        "state": state_data,
+        "region": region_data,
+        "income": np.random.normal(70000, 15000, n_rows).astype(int),
+        "age_group": np.random.choice(["18-25", "26-35", "36-45", "46-55", "56+"], n_rows)
+    })
+    
+    return data
+
+
+@pytest.fixture
+def taxonomy_hierarchies():
+    """
+    Provide hierarchical taxonomies for generalization.
+    
+    Returns:
+        dict: A dictionary of hierarchical taxonomies
+    """
+    # Location hierarchy
+    location_hierarchy = {
+        "city_to_state": {
+            "New York": "NY", "Buffalo": "NY", "Albany": "NY",
+            "Los Angeles": "CA", "San Francisco": "CA", "San Diego": "CA",
+            "Chicago": "IL", "Springfield": "IL", "Peoria": "IL",
+            "Miami": "FL", "Orlando": "FL", "Tampa": "FL"
+        },
+        "state_to_region": {
+            "NY": "Northeast", "MA": "Northeast", "CT": "Northeast",
+            "CA": "West", "OR": "West", "WA": "West",
+            "IL": "Midwest", "OH": "Midwest", "MI": "Midwest",
+            "FL": "South", "GA": "South", "TX": "South"
+        }
+    }
+    
+    # Age group hierarchy
+    age_hierarchy = {
+        "18-25": "Young Adult",
+        "26-35": "Young Adult",
+        "36-45": "Middle Aged",
+        "46-55": "Middle Aged",
+        "56+": "Senior"
+    }
+    
+    # Medical condition hierarchy
+    medical_hierarchy = {
+        "Type 1 Diabetes": "Diabetes",
+        "Type 2 Diabetes": "Diabetes",
+        "Gestational Diabetes": "Diabetes",
+        "Diabetes": "Endocrine Disorder",
+        "Hypertension": "Cardiovascular Disorder",
+        "Arrhythmia": "Cardiovascular Disorder",
+        "Asthma": "Respiratory Disorder",
+        "COPD": "Respiratory Disorder",
+        "Allergies": "Immune Disorder",
+        "Eczema": "Immune Disorder"
+    }
+    
+    return {
+        "location": location_hierarchy,
+        "age": age_hierarchy,
+        "medical": medical_hierarchy
+    }
+
+
+@pytest.fixture
+def empty_data():
+    """
+    Create an empty DataFrame for edge case testing.
+    
+    Returns:
+        pd.DataFrame: An empty DataFrame
+    """
+    return pd.DataFrame()
+
+
+@pytest.fixture
+def single_row_data():
+    """
+    Create a DataFrame with a single row for edge case testing.
+    
+    Returns:
+        pd.DataFrame: A DataFrame with a single row
+    """
+    return pd.DataFrame({
+        "name": ["John Doe"],
+        "email": ["john@example.com"],
+        "age": [35],
+        "income": [85000]
+    }) 

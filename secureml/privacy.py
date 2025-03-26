@@ -139,15 +139,58 @@ def _train_with_opacus(
             "Please install it with 'pip install opacus torch'."
         )
 
+    # Extract training parameters from kwargs
+    batch_size = kwargs.get("batch_size", 64)
+    epochs = kwargs.get("epochs", 10)
+    learning_rate = kwargs.get("learning_rate", 0.001)
+    validation_split = kwargs.get("validation_split", 0.2)
+    shuffle = kwargs.get("shuffle", True)
+    verbose = kwargs.get("verbose", True)
+    criterion = kwargs.get("criterion", torch.nn.CrossEntropyLoss())
+    device = kwargs.get("device", "cuda" if torch.cuda.is_available() else "cpu")
+
+    # Move model to the appropriate device
+    model = model.to(device)
+
     # Convert data to PyTorch format if needed
-    if isinstance(data, pd.DataFrame):
-        data = torch.utils.data.TensorDataset(
-            torch.tensor(data.values, dtype=torch.float32)
-        )
+    x_data, y_data = _prepare_data_for_torch(data, **kwargs)
+    
+    # Create validation split if requested
+    if validation_split > 0 and len(x_data) > 1:
+        val_size = int(len(x_data) * validation_split)
+        indices = torch.randperm(len(x_data))
+        train_indices = indices[val_size:]
+        val_indices = indices[:val_size]
+        
+        x_train, y_train = x_data[train_indices], y_data[train_indices]
+        x_val, y_val = x_data[val_indices], y_data[val_indices]
+    else:
+        x_train, y_train = x_data, y_data
+        x_val, y_val = None, None
 
     # Create a DataLoader for training
-    batch_size = kwargs.get("batch_size", 64)
-    data_loader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=True)
+    train_dataset = torch.utils.data.TensorDataset(
+        torch.tensor(x_train, dtype=torch.float32),
+        torch.tensor(y_train, dtype=torch.long)
+    )
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset, 
+        batch_size=batch_size, 
+        shuffle=shuffle
+    )
+    
+    # Create validation DataLoader if validation data exists
+    val_loader = None
+    if x_val is not None and y_val is not None:
+        val_dataset = torch.utils.data.TensorDataset(
+            torch.tensor(x_val, dtype=torch.float32),
+            torch.tensor(y_val, dtype=torch.long)
+        )
+        val_loader = torch.utils.data.DataLoader(
+            val_dataset, 
+            batch_size=batch_size, 
+            shuffle=False
+        )
 
     # Validate the model for DP training
     if not ModuleValidator.is_valid(model):
@@ -155,30 +198,170 @@ def _train_with_opacus(
 
     # Setup optimizer
     optimizer_class = kwargs.get("optimizer", torch.optim.Adam)
-    optimizer = optimizer_class(model.parameters(), lr=kwargs.get("learning_rate", 0.001))
+    optimizer = optimizer_class(
+        model.parameters(), 
+        lr=learning_rate,
+        **kwargs.get("optimizer_kwargs", {})
+    )
 
     # Setup PrivacyEngine
     privacy_engine = PrivacyEngine()
-    model, optimizer, data_loader = privacy_engine.make_private_with_epsilon(
-        module=model,
-        optimizer=optimizer,
-        data_loader=data_loader,
-        epochs=kwargs.get("epochs", 10),
-        target_epsilon=epsilon,
-        target_delta=delta,
-        max_grad_norm=max_grad_norm,
-    )
+    
+    # Make the model private with either epsilon/delta or noise_multiplier
+    if noise_multiplier is not None:
+        model, optimizer, train_loader = privacy_engine.make_private(
+            module=model,
+            optimizer=optimizer,
+            data_loader=train_loader,
+            noise_multiplier=noise_multiplier,
+            max_grad_norm=max_grad_norm,
+        )
+    else:
+        model, optimizer, train_loader = privacy_engine.make_private_with_epsilon(
+            module=model,
+            optimizer=optimizer,
+            data_loader=train_loader,
+            epochs=epochs,
+            target_epsilon=epsilon,
+            target_delta=delta,
+            max_grad_norm=max_grad_norm,
+        )
 
-    # Training loop (simplified)
-    for epoch in range(kwargs.get("epochs", 10)):
-        for batch in data_loader:
+    # Training loop
+    best_val_loss = float('inf')
+    early_stopping_patience = kwargs.get("early_stopping_patience", 0)
+    patience_counter = 0
+    best_model_state = None
+    
+    for epoch in range(epochs):
+        # Training phase
+        model.train()
+        train_loss = 0.0
+        train_correct = 0
+        train_total = 0
+        
+        for inputs, targets in train_loader:
+            # Move tensors to the appropriate device
+            inputs, targets = inputs.to(device), targets.to(device)
+            
+            # Forward pass
             optimizer.zero_grad()
-            # This is simplified - in real code, you'd compute loss and do proper backprop
-            loss = model(batch)
+            outputs = model(inputs)
+            
+            # Calculate loss
+            loss = criterion(outputs, targets)
+            
+            # Backward pass and optimization
             loss.backward()
             optimizer.step()
-
+            
+            # Update metrics
+            train_loss += loss.item() * inputs.size(0)
+            _, predicted = torch.max(outputs.data, 1)
+            train_total += targets.size(0)
+            train_correct += (predicted == targets).sum().item()
+        
+        # Calculate average training metrics
+        train_loss = train_loss / train_total
+        train_accuracy = train_correct / train_total
+        
+        # Validation phase if validation data exists
+        val_loss = 0.0
+        val_accuracy = 0.0
+        
+        if val_loader is not None:
+            model.eval()
+            val_loss = 0.0
+            val_correct = 0
+            val_total = 0
+            
+            with torch.no_grad():
+                for inputs, targets in val_loader:
+                    # Move tensors to the appropriate device
+                    inputs, targets = inputs.to(device), targets.to(device)
+                    
+                    # Forward pass
+                    outputs = model(inputs)
+                    
+                    # Calculate loss
+                    loss = criterion(outputs, targets)
+                    
+                    # Update metrics
+                    val_loss += loss.item() * inputs.size(0)
+                    _, predicted = torch.max(outputs.data, 1)
+                    val_total += targets.size(0)
+                    val_correct += (predicted == targets).sum().item()
+            
+            # Calculate average validation metrics
+            val_loss = val_loss / val_total
+            val_accuracy = val_correct / val_total
+            
+            # Check for early stopping
+            if early_stopping_patience > 0:
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    patience_counter = 0
+                    # Save the best model state
+                    best_model_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+                else:
+                    patience_counter += 1
+                    if patience_counter >= early_stopping_patience:
+                        if verbose:
+                            print(f"Early stopping at epoch {epoch+1}")
+                        # Load the best model state
+                        if best_model_state is not None:
+                            model.load_state_dict(best_model_state)
+                        break
+        
+        # Print epoch results
+        if verbose:
+            if val_loader is not None:
+                print(f"Epoch {epoch+1}/{epochs} - "
+                      f"Loss: {train_loss:.4f} - Accuracy: {train_accuracy:.4f} - "
+                      f"Val Loss: {val_loss:.4f} - Val Accuracy: {val_accuracy:.4f}")
+            else:
+                print(f"Epoch {epoch+1}/{epochs} - "
+                      f"Loss: {train_loss:.4f} - Accuracy: {train_accuracy:.4f}")
+    
+    # Get the privacy budget spent
+    if hasattr(privacy_engine, "get_epsilon"):
+        spent_epsilon = privacy_engine.get_epsilon(delta)
+        if verbose:
+            print(f"Privacy budget spent (ε = {spent_epsilon:.4f}, δ = {delta})")
+    
     return model
+
+
+def _prepare_data_for_torch(data: Union[pd.DataFrame, np.ndarray], **kwargs: Any) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Prepare data for PyTorch model training.
+    
+    Args:
+        data: Input data (DataFrame or numpy array)
+        **kwargs: Additional parameters for data preparation
+        
+    Returns:
+        Tuple of (features, labels) as numpy arrays
+    """
+    # If data is a DataFrame
+    if isinstance(data, pd.DataFrame):
+        # Check if target column is specified
+        target_col = kwargs.get("target_column")
+        
+        if target_col is not None and target_col in data.columns:
+            # Extract features and target
+            x = data.drop(columns=[target_col]).values
+            y = data[target_col].values
+        else:
+            # Assume last column is the target
+            x = data.iloc[:, :-1].values
+            y = data.iloc[:, -1].values
+    else:
+        # If data is a numpy array, assume last column is the target
+        x = data[:, :-1]
+        y = data[:, -1]
+    
+    return x, y
 
 
 def _train_with_tf_privacy(
