@@ -31,6 +31,7 @@ htmlcov/
 .tox/
 coverage.xml
 *.cover
+.hypothesis/
 
 # Documentation
 docs/_build/

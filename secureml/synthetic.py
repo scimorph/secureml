@@ -573,141 +573,74 @@ def _generate_statistical_synthetic(
             val_counts = data[col].value_counts(normalize=True, dropna=False)
             categorical_distributions[col] = val_counts
 
-    # Step 4: Handle numeric columns with a multivariate approach
-    if len(numeric_cols) >= 2:
-        # Extract numeric data
-        numeric_data = data[numeric_cols].copy()
-        
-        # Create masks for the numeric data
-        nan_mask = numeric_data.isna()
-        numeric_data_filled = numeric_data.fillna(numeric_data.mean())
-        
-        # Handle skewed distributions if requested
-        transformers = {}
-        if handle_skewness:
-            for col in numeric_cols:
-                # Check if the column is skewed
-                skewness = stats.skew(numeric_data_filled[col].dropna())
-                if abs(skewness) > 1.0:  # Threshold for "skewed" data
-                    transformer = QuantileTransformer(output_distribution='normal')
-                    transformed_col = transformer.fit_transform(
-                        numeric_data_filled[[col]].values
-                    ).flatten()
-                    numeric_data_filled[col] = transformed_col
-                    transformers[col] = transformer
-        
-        # Try Gaussian Mixture Model first (better for multi-modal distributions)
-        try:
-            # Select the best number of components based on BIC
-            best_n_components = 1
-            best_bic = float('inf')
-            
-            for n_components in range(1, min(6, len(numeric_data_filled) // 20 + 1)):
-                gmm = GaussianMixture(
-                    n_components=n_components, 
-                    covariance_type='full',
-                    random_state=seed
-                )
-                gmm.fit(numeric_data_filled)
-                bic = gmm.bic(numeric_data_filled)
-                
-                if bic < best_bic:
-                    best_bic = bic
-                    best_n_components = n_components
-            
-            # Fit GMM with the best number of components
-            gmm = GaussianMixture(
-                n_components=best_n_components, 
-                covariance_type='full',
-                random_state=seed
-            )
-            gmm.fit(numeric_data_filled)
-            
-            # Sample from the GMM
-            synthetic_numeric, _ = gmm.sample(num_samples)
-            synthetic_numeric_df = pd.DataFrame(
-                synthetic_numeric, 
-                columns=numeric_cols
-            )
-            
-            # Inverse transform if skewness was handled
-            if handle_skewness:
-                for col in transformers:
-                    synthetic_numeric_df[col] = transformers[col].inverse_transform(
-                        synthetic_numeric_df[[col]]
-                    ).flatten()
-                    
-            # Ensure values are within the original range if preserve_outliers is False
-            if not preserve_outliers:
-                for col in numeric_cols:
-                    min_val = numeric_data[col].min()
-                    max_val = numeric_data[col].max()
-                    synthetic_numeric_df[col] = synthetic_numeric_df[col].clip(
-                        min_val, max_val
-                    )
-            
-            # Add the synthetic numeric data to the result
-            for col in numeric_cols:
-                synthetic_data[col] = synthetic_numeric_df[col].values
-                
-                # Restore correct dtype if requested
-                if preserve_dtypes and pd.api.types.is_integer_dtype(data[col]):
-                    synthetic_data[col] = synthetic_data[col].round().astype(int)
-                    
-        except (ValueError, np.linalg.LinAlgError):
-            # Fallback: Generate each numeric column independently with KDE
-            for col in numeric_cols:
-                if not data[col].isna().all():
-                    values = data[col].dropna().values
-                    
-                    if len(values) > 1:
-                        # Use kernel density estimation
-                        kde = stats.gaussian_kde(values)
-                        synthetic_values = kde.resample(num_samples)[0]
-                        
-                        # Ensure values are within the original range if preserve_outliers is False
-                        if not preserve_outliers:
-                            min_val = data[col].min()
-                            max_val = data[col].max()
-                            synthetic_values = np.clip(synthetic_values, min_val, max_val)
-                        
-                        synthetic_data[col] = synthetic_values
-                        
-                        # Restore correct dtype if requested
-                        if preserve_dtypes and pd.api.types.is_integer_dtype(data[col]):
-                            synthetic_data[col] = synthetic_data[col].round().astype(int)
-    else:
-        # If less than 2 numeric columns, generate each independently
+    # Step 4: Handle numeric columns
+    if numeric_cols:
+        synthetic_data = pd.DataFrame(index=range(num_samples), columns=template.columns)
         for col in numeric_cols:
-            if not data[col].isna().all():
-                values = data[col].dropna().values
-                
-                if len(values) > 1:
-                    # Use kernel density estimation
+            values = template[col].dropna().values
+            if len(values) > 1:
+                # Check for low variance
+                orig_std = template[col].std()
+                if orig_std < 1.0:  # Threshold for low variance
+                    # Get unique values and their probabilities
+                    unique, counts = np.unique(values, return_counts=True)
+                    probabilities = counts / len(values)
+                    synthetic_data[col] = np.random.choice(unique, num_samples, replace=True, p=probabilities)
+                else:
+                    # Use KDE for better distribution fit
                     kde = stats.gaussian_kde(values)
                     synthetic_values = kde.resample(num_samples)[0]
-                    
-                    # Ensure values are within the original range if preserve_outliers is False
-                    if not preserve_outliers:
-                        min_val = data[col].min()
-                        max_val = data[col].max()
-                        synthetic_values = np.clip(synthetic_values, min_val, max_val)
-                    
+                    # Clip to original range to avoid extreme outliers
+                    min_val, max_val = template[col].min(), template[col].max()
+                    synthetic_values = np.clip(synthetic_values, min_val, max_val)
                     synthetic_data[col] = synthetic_values
-                    
-                    # Restore correct dtype if requested
-                    if preserve_dtypes and pd.api.types.is_integer_dtype(data[col]):
-                        synthetic_data[col] = synthetic_data[col].round().astype(int)
+                
+                # Preserve integer dtype
+                if pd.api.types.is_integer_dtype(template[col]):
+                    synthetic_data[col] = synthetic_data[col].round().astype(int)
     
-    # Step 5: Generate categorical variables considering correlations
+    # Step 5: Generate categorical variables with exact proportions
     for col in categorical_cols:
         if col in categorical_distributions:
-            # Generate synthetic categorical data
-            synthetic_data[col] = np.random.choice(
-                categorical_distributions[col].index,
-                size=num_samples,
-                p=categorical_distributions[col].values
-            )
+            val_counts = categorical_distributions[col]
+            # Calculate expected counts for each value
+            expected_counts = {val: int(np.round(p * num_samples)) for val, p in val_counts.items()}
+            # Adjust total to match num_samples
+            total = sum(expected_counts.values())
+            if total < num_samples:
+                # Add remainder to the most frequent category
+                most_frequent = val_counts.idxmax()
+                expected_counts[most_frequent] += num_samples - total
+            elif total > num_samples:
+                # Subtract excess from the least frequent category
+                while total > num_samples:
+                    least_frequent = min(
+                        {k: v for k, v in expected_counts.items() if v > 0},
+                        key=expected_counts.get
+                    )
+                    if expected_counts[least_frequent] > 0:
+                        expected_counts[least_frequent] -= 1
+                        total -= 1
+                    else:
+                        break
+
+            # Generate synthetic values with exact counts
+            synthetic_values = []
+            for val, count in expected_counts.items():
+                synthetic_values.extend([val] * count)
+            # Shuffle to randomize order
+            np.random.shuffle(synthetic_values)
+            # Ensure length matches num_samples (edge case handling)
+            if len(synthetic_values) < num_samples:
+                additional = np.random.choice(
+                    list(val_counts.index),
+                    size=num_samples - len(synthetic_values),
+                    p=val_counts.values
+                )
+                synthetic_values.extend(additional)
+            elif len(synthetic_values) > num_samples:
+                synthetic_values = synthetic_values[:num_samples]
+            synthetic_data[col] = synthetic_values
     
     # Step 6: Handle other columns (text, high-cardinality categorical, etc.)
     for col in other_cols:

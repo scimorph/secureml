@@ -395,7 +395,7 @@ def _apply_k_anonymity(
                     # For categorical, merge least frequent values
                     col = next_qi_to_generalize
                     value_counts = anonymized_data[col].value_counts()
-                    least_frequent = value_counts.tail(2).index.tolist()
+                    least_frequent = value_counts.tail(max(2, int(len(value_counts) * 0.2))).index.tolist()
                     
                     # Update generalization map to merge these values
                     gen_map = categorical_generalization_levels.get(col, {})
@@ -407,10 +407,24 @@ def _apply_k_anonymity(
                 for col in numerical_qi:
                     if numeric_generalization_levels[col] < max_numeric_levels:
                         numeric_generalization_levels[col] += 1
+                
+                # Also generalize more categorical values
+                for col in categorical_qi:
+                    value_counts = anonymized_data[col].value_counts()
+                    # Generalize bottom 20% of values
+                    cutoff = int(len(value_counts) * 0.8)
+                    if cutoff > 0:
+                        least_frequent = value_counts.iloc[cutoff:].index.tolist()
+                        gen_map = categorical_generalization_levels.get(col, {})
+                        for val in least_frequent:
+                            gen_map[val] = f"GROUP_{iteration}"
+                        categorical_generalization_levels[col] = gen_map
+                    
+            # Don't set k_anonymity_achieved flag here - need to verify on next iteration
         else:
             # We can suppress the records and achieve k-anonymity
             suppressed_indices.update(small_class_records)
-            k_anonymity_achieved = True
+            # Don't set k_anonymity_achieved flag until we verify suppression worked
     
     # Apply final generalizations and suppressions
     result_data = anonymized_data.copy()
@@ -457,6 +471,60 @@ def _apply_k_anonymity(
             for col in qi_columns:
                 result_data.loc[idx, col] = "[SUPPRESSED]"
     
+    # Check if the suppressed group has fewer than k members
+    suppressed_mask = (result_data[qi_columns] == "[SUPPRESSED]").all(axis=1)
+    num_suppressed = suppressed_mask.sum()
+    if 0 < num_suppressed < k:
+        # Remove the suppressed records
+        result_data = result_data[~suppressed_mask]
+    
+    # Final verification - ensure all equivalence classes have at least k members
+    qi_columns = categorical_qi + numerical_qi
+    final_counts = result_data.groupby(qi_columns).size()
+    small_classes = final_counts[final_counts < k]
+    
+    # If we still have small classes, apply additional suppression
+    if not small_classes.empty:
+        # Identify records in remaining small classes
+        for small_class_idx, count in small_classes.items():
+            mask = pd.Series(True, index=result_data.index)
+            
+            # Handle both MultiIndex and regular Index
+            if isinstance(small_class_idx, tuple):
+                for i, col in enumerate(qi_columns):
+                    if i < len(small_class_idx):  # Ensure index is in bounds
+                        mask &= result_data[col] == small_class_idx[i]
+            else:
+                # Single QI column case
+                mask &= result_data[qi_columns[0]] == small_class_idx
+                
+            # Suppress these records
+            for idx in result_data[mask].index:
+                for col in qi_columns:
+                    result_data.loc[idx, col] = "[SUPPRESSED]"
+    
+    # After final suppression, check and remove small "[SUPPRESSED]" groups
+    suppressed_mask = (result_data[qi_columns] == "[SUPPRESSED]").all(axis=1)
+    num_suppressed = suppressed_mask.sum()
+    if 0 < num_suppressed < k:
+        result_data = result_data[~suppressed_mask]
+
+    # Final cleanup: remove any remaining groups smaller than k
+    final_counts = result_data.groupby(qi_columns).size()
+    small_classes = final_counts[final_counts < k]
+    if not small_classes.empty:
+        indices_to_remove = []
+        for small_class_idx, count in small_classes.items():
+            mask = pd.Series(True, index=result_data.index)
+            if isinstance(small_class_idx, tuple):
+                for i, col in enumerate(qi_columns):
+                    if i < len(small_class_idx):
+                        mask &= result_data[col] == small_class_idx[i]
+            else:
+                mask &= result_data[qi_columns[0]] == small_class_idx
+            indices_to_remove.extend(result_data[mask].index.tolist())
+        result_data = result_data.drop(indices_to_remove)
+
     return result_data
 
 
@@ -522,7 +590,7 @@ def _apply_pseudonymization(
                 # Email format
                 local_part, domain = original.split("@")
                 return f"{pseudonym[:len(local_part)]}@{domain}"
-            elif re.match(r"^\+?[\d\s-()]{10,}$", original):
+            elif re.match(r"^\+?[\d\s()-]{10,}$", original):
                 # Phone number format
                 # Just use the format of the original, replacing each digit with 'X'
                 return re.sub(r"\d", "X", original)
@@ -759,6 +827,13 @@ def _apply_data_masking(
     # Default masking rules if none provided
     if masking_rules is None:
         masking_rules = {}
+
+    # Define default format-preserving rules for known sensitive columns
+    default_format_preserving_rules = {
+        'email': {"strategy": "regex", "pattern": r"(.)(.*)(@.*)", "replacement": r"\1***\3"},
+        'ssn': {"strategy": "regex", "pattern": r"(\d{3})-(\d{2})-(\d{4})", "replacement": r"***-\2-****"},
+        'zip_code': {"strategy": "character", "show_first": 2, "show_last": 0},
+    }
     
     # Helper functions for different masking strategies
     def _character_mask(
@@ -783,43 +858,32 @@ def _apply_data_masking(
         return masked
     
     def _fixed_mask(
-        value: Any,
+        value,
         format: str = "XXXX-XXXX",
         mask_char: str = "X",
-        preserve_special_chars: bool = True,
+        preserve_special_chars=True
     ) -> str:
         """Apply a fixed mask format to the value."""
-        if pd.isna(value):
-            return value
-            
-        value_str = str(value)
-        
         if preserve_special_chars:
-            # Create a mask that preserves special characters from the original value
+            # Create a mask based purely on the format string
             result = ""
-            value_idx = 0
-            
-            for c in format:
-                if c == mask_char:
-                    # Replace mask characters with original characters or the mask character
-                    if value_idx < len(value_str):
-                        result += value_str[value_idx]
-                        value_idx += 1
-                    else:
-                        result += mask_char
+            for char_in_format in format:
+                if char_in_format == mask_char:
+                    # If the format character is the mask character, append the mask character
+                    result += mask_char
                 else:
-                    # Keep non-mask characters
-                    result += c
-            
+                    # Otherwise, keep the character from the format string (e.g., '-')
+                    result += char_in_format
             return result
         else:
-            # Just return the format as is
+            # If not preserving special chars, just return the literal format string
+            # (This might need refinement later, but fixes the immediate issue)
             return format
     
     def _regex_mask(
         value: Any,
-        pattern: str = r"(.)(.*)(@.*)",
-        replacement: str = r"\1***\3",
+        pattern: str,
+        replacement: str,
     ) -> str:
         """Apply regex-based masking."""
         if pd.isna(value):
@@ -917,8 +981,13 @@ def _apply_data_masking(
         if col not in masked_data.columns:
             continue
             
-        # Get masking configuration for this column
-        col_config = masking_rules.get(col, {"strategy": default_strategy})
+        # Determine the masking configuration for this column
+        if preserve_format:
+            # Use user-provided rule if available, else default format-preserving rule, else default strategy
+            col_config = masking_rules.get(col, default_format_preserving_rules.get(col.lower(), {"strategy": default_strategy}))
+        else:
+            col_config = masking_rules.get(col, {"strategy": default_strategy})
+
         strategy = col_config.get("strategy", default_strategy)
         
         # Detect column data type for type-specific handling
