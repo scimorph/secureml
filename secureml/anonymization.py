@@ -571,6 +571,9 @@ def _apply_pseudonymization(
     from typing import Dict, Optional, Pattern
     import hmac
     import struct
+    
+    # Import the key management module for secure key handling
+    from .key_management import get_encryption_key
 
     def _generate_hash(value: str, salt: Optional[str] = None) -> str:
         """Generate a deterministic hash for a value."""
@@ -643,9 +646,9 @@ def _apply_pseudonymization(
             
         # Generate key if not provided
         if key is None:
-            # Use a derivation of a master key (in production, this would be securely stored)
-            master_key = kwargs.get('master_key', b'SecureMLDefaultKey')
-            key = hashlib.sha256(master_key).digest()
+            # Use secure key management to retrieve the master key
+            master_key_name = kwargs.get('master_key_name', 'fpe_master_key')
+            key = get_encryption_key(key_name=master_key_name, encoding="bytes")
         
         # Detect the type of data to preserve format appropriately
         if value.isdigit():

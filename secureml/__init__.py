@@ -25,6 +25,12 @@ from secureml.presets import (
 # Import audit trail and reporting functionality
 from secureml.audit import AuditTrail, audit_function, get_audit_logs
 from secureml.reporting import ReportGenerator
+# Import key management functionality
+from secureml.key_management import (
+    configure_default_key_manager,
+    get_encryption_key,
+    KeyManager,
+)
 
 # Import CLI entry point
 from secureml.cli import cli
@@ -47,6 +53,10 @@ __all__ = [
     "get_audit_logs",
     "ReportGenerator",
     "ComplianceAuditor",
+    # Key management
+    "configure_default_key_manager",
+    "get_encryption_key",
+    "KeyManager",
     # CLI entry point
     "cli",
 ]

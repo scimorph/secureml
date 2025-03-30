@@ -612,5 +612,235 @@ def environment_info():
         click.echo("Run 'secureml environments setup-tf-privacy' to set up the environment")
 
 
+@cli.group()
+def keys():
+    """Manage encryption keys and secrets for SecureML."""
+    pass
+
+
+@keys.command()
+@click.option(
+    "--vault-url",
+    "-u",
+    help="HashiCorp Vault server URL",
+    envvar="SECUREML_VAULT_URL",
+)
+@click.option(
+    "--vault-token",
+    "-t",
+    help="HashiCorp Vault authentication token",
+    envvar="SECUREML_VAULT_TOKEN",
+)
+@click.option(
+    "--vault-path",
+    "-p",
+    help="Base path in Vault for SecureML secrets",
+    default="secureml",
+)
+@click.option(
+    "--test-connection",
+    "-c",
+    is_flag=True,
+    help="Test connection to Vault server",
+)
+def configure_vault(vault_url, vault_token, vault_path, test_connection):
+    """
+    Configure HashiCorp Vault for secure key storage.
+    
+    This command will configure the connection to HashiCorp Vault
+    for secure key storage and management. If you don't specify
+    --vault-url or --vault-token, it will check for SECUREML_VAULT_URL
+    and SECUREML_VAULT_TOKEN environment variables.
+    """
+    from secureml.key_management import KeyManager
+    
+    # If no parameters provided, print help and exit
+    if not vault_url and not vault_token and not test_connection:
+        click.echo("No parameters provided. Use --help for usage information.")
+        return
+    
+    # Initialize key manager
+    try:
+        key_manager = KeyManager(
+            vault_url=vault_url,
+            vault_token=vault_token,
+            vault_path=vault_path,
+            use_env_fallback=True,
+            use_default_fallback=False,
+        )
+        
+        if test_connection:
+            if key_manager.vault_client and key_manager.vault_client.is_authenticated():
+                click.secho("✓ Vault connection successful", fg="green")
+                click.echo(f"  URL: {vault_url}")
+                click.echo(f"  Path: {vault_path}")
+            else:
+                click.secho("✗ Vault connection failed", fg="red")
+                if not vault_url:
+                    click.echo("  Vault URL not provided")
+                if not vault_token:
+                    click.echo("  Vault token not provided")
+        else:
+            click.echo("Vault configuration saved.")
+            click.echo("Use environment variables or the configure_default_key_manager() function to use this configuration in your code.")
+    except Exception as e:
+        click.secho(f"Error configuring Vault: {str(e)}", fg="red")
+
+
+@keys.command()
+@click.option(
+    "--vault-url",
+    "-u",
+    help="HashiCorp Vault server URL",
+    envvar="SECUREML_VAULT_URL",
+)
+@click.option(
+    "--vault-token",
+    "-t",
+    help="HashiCorp Vault authentication token",
+    envvar="SECUREML_VAULT_TOKEN",
+)
+@click.option(
+    "--vault-path",
+    "-p",
+    help="Base path in Vault for SecureML secrets",
+    default="secureml",
+)
+@click.option(
+    "--key-name",
+    "-k",
+    help="Name of the key to store",
+    required=True,
+)
+@click.option(
+    "--length",
+    "-l",
+    help="Length of the generated key in bytes",
+    default=32,
+    type=int,
+)
+@click.option(
+    "--encoding",
+    "-e",
+    help="Encoding format for the generated key",
+    type=click.Choice(["base64", "hex"]),
+    default="hex",
+)
+def generate_key(vault_url, vault_token, vault_path, key_name, length, encoding):
+    """
+    Generate and store a new encryption key in Vault.
+    
+    This command generates a cryptographically secure random key
+    and stores it in HashiCorp Vault for later use. The key can
+    be used for encryption, pseudonymization, or other security
+    operations in SecureML.
+    """
+    import os
+    import base64
+    from secureml.key_management import KeyManager
+    
+    try:
+        # Generate a secure random key
+        random_key = os.urandom(length)
+        
+        # Format the key according to the requested encoding
+        if encoding == "hex":
+            key_value = random_key.hex()
+        else:  # base64
+            key_value = base64.b64encode(random_key).decode('ascii')
+        
+        # Initialize key manager
+        key_manager = KeyManager(
+            vault_url=vault_url,
+            vault_token=vault_token,
+            vault_path=vault_path,
+            use_env_fallback=True,
+            use_default_fallback=False,
+        )
+        
+        # Store the key in Vault
+        if key_manager.vault_client:
+            success = key_manager.set_secret(key_name, key_value)
+            if success:
+                click.secho(f"✓ Key '{key_name}' generated and stored successfully", fg="green")
+                click.echo(f"  Path: {vault_path}/data/{key_name}")
+                click.echo(f"  Length: {length} bytes")
+                click.echo(f"  Encoding: {encoding}")
+            else:
+                click.secho(f"✗ Failed to store key in Vault", fg="red")
+        else:
+            click.secho("✗ Vault connection not configured", fg="red")
+            click.echo("  Use --vault-url and --vault-token options or set")
+            click.echo("  SECUREML_VAULT_URL and SECUREML_VAULT_TOKEN environment variables")
+    except Exception as e:
+        click.secho(f"Error generating key: {str(e)}", fg="red")
+
+
+@keys.command()
+@click.option(
+    "--vault-url",
+    "-u",
+    help="HashiCorp Vault server URL",
+    envvar="SECUREML_VAULT_URL",
+)
+@click.option(
+    "--vault-token",
+    "-t",
+    help="HashiCorp Vault authentication token",
+    envvar="SECUREML_VAULT_TOKEN",
+)
+@click.option(
+    "--vault-path",
+    "-p",
+    help="Base path in Vault for SecureML secrets",
+    default="secureml",
+)
+@click.option(
+    "--key-name",
+    "-k",
+    help="Name of the key to retrieve",
+    required=True,
+)
+@click.option(
+    "--encoding",
+    "-e",
+    help="Desired output encoding format for the key",
+    type=click.Choice(["base64", "hex"]),
+    default="hex",
+)
+def get_key(vault_url, vault_token, vault_path, key_name, encoding):
+    """
+    Retrieve an encryption key from Vault.
+    
+    This command retrieves a key from HashiCorp Vault for use
+    in encryption, pseudonymization, or other security operations.
+    """
+    from secureml.key_management import KeyManager
+    
+    try:
+        # Initialize key manager
+        key_manager = KeyManager(
+            vault_url=vault_url,
+            vault_token=vault_token,
+            vault_path=vault_path,
+            use_env_fallback=True,
+            use_default_fallback=False,
+        )
+        
+        # Retrieve the key
+        try:
+            key = key_manager.get_encryption_key(key_name=key_name, encoding=encoding)
+            if key:
+                click.secho(f"✓ Key '{key_name}' retrieved successfully", fg="green")
+                click.echo(f"  Key: {key}")
+                click.echo(f"  Encoding: {encoding}")
+            else:
+                click.secho(f"✗ Key '{key_name}' not found", fg="red")
+        except ValueError as e:
+            click.secho(f"✗ {str(e)}", fg="red")
+    except Exception as e:
+        click.secho(f"Error retrieving key: {str(e)}", fg="red")
+
+
 if __name__ == "__main__":
     cli() 
