@@ -14,6 +14,7 @@ This user guide provides detailed information on using SecureML's features to cr
    compliance
    federated_learning
    audit_trails
+   reporting
    key_management
    cli
    isolated_environments
@@ -40,6 +41,7 @@ Compliance & Auditing
 
 * **Compliance Checking**: Verify that your datasets and models comply with privacy regulations
 * **Audit Trails**: Maintain comprehensive logs of all data operations for compliance documentation
+* **Reporting**: Generate detailed reports to document compliance and audit trails
 
 Security
 ^^^^^^^
