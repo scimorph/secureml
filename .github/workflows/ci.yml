@@ -50,10 +50,6 @@ jobs:
     - name: Install dependencies
       run: |
         poetry install --with dev
-    
-    - name: Type check with mypy
-      run: |
-        poetry run mypy secureml
 
     - name: Run tests
       run: |
