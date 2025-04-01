@@ -3,8 +3,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/scimorph/secureml/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/scimorph/secureml/ci.yml?branch=main&label=CI/CD&logo=github" alt="CI/CD Status"></a>
-  <a href="https://github.com/scimorph/secureml/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/scimorph/secureml/ci.yml?branch=main&label=tests&logo=pytest" alt="Tests Status"></a>
+  <a href="https://github.com/scimorph/secureml/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/scimorph/secureml/ci.yml?branch=master&label=CI/CD&logo=github" alt="CI/CD Status"></a>
+  <a href="https://github.com/scimorph/secureml/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/scimorph/secureml/ci.yml?branch=master&label=tests&logo=pytest" alt="Tests Status"></a>
   <a href="https://pypi.org/project/secureml/"><img src="https://img.shields.io/pypi/v/secureml.svg" alt="PyPI Version"></a>
   <a href="https://github.com/scimorph/secureml/blob/master/LICENSE"><img src="https://img.shields.io/github/license/scimorph/secureml" alt="License"></a>
   <img src="https://img.shields.io/pypi/pyversions/secureml.svg" alt="Python Versions">
