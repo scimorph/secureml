@@ -10,8 +10,8 @@ This workflow runs the full test suite, builds the package, and handles deployme
 
 The workflow is triggered on:
 
-- **Pull Requests**: When a PR is opened or updated targeting the `main` branch
-- **Push to Main**: When code is pushed directly to the `main` branch
+- **Pull Requests**: When a PR is opened or updated targeting the `master` branch
+- **Push to Main**: When code is pushed directly to the `master` branch
 - **Releases**: When a GitHub release is created or published
 - **Scheduled**: Runs nightly at midnight UTC (00:00)
 

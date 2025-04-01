@@ -3,11 +3,11 @@ name: SecureML CI/CD
 on:
   # Run on pull requests
   pull_request:
-    branches: [ main ]
+    branches: [ master ]
   
   # Run on pushes to main branch
   push:
-    branches: [ main ]
+    branches: [ master ]
   
   # Run on release creation
   release:
