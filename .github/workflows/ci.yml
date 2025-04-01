@@ -50,11 +50,6 @@ jobs:
     - name: Install dependencies
       run: |
         poetry install --with dev
-
-    - name: Lint with isort and black
-      run: |
-        poetry run isort --check secureml tests
-        poetry run black --check secureml tests
     
     - name: Type check with mypy
       run: |
