@@ -2,6 +2,14 @@
   <img src="https://github.com/scimorph/secureml/blob/master/secureml_logo_2-.png" alt="SecureML Logo" width="500">
 </p>
 
+<p align="center">
+  <a href="https://github.com/scimorph/secureml/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/scimorph/secureml/ci.yml?branch=main&label=CI/CD&logo=github" alt="CI/CD Status"></a>
+  <a href="https://github.com/scimorph/secureml/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/scimorph/secureml/ci.yml?branch=main&label=tests&logo=pytest" alt="Tests Status"></a>
+  <a href="https://pypi.org/project/secureml/"><img src="https://img.shields.io/pypi/v/secureml.svg" alt="PyPI Version"></a>
+  <a href="https://github.com/scimorph/secureml/blob/master/LICENSE"><img src="https://img.shields.io/github/license/scimorph/secureml" alt="License"></a>
+  <img src="https://img.shields.io/pypi/pyversions/secureml.svg" alt="Python Versions">
+</p>
+
 # SecureML
 
 SecureML is an open-source Python library that integrates with popular machine learning frameworks like TensorFlow and PyTorch. It provides developers with easy-to-use utilities to ensure that AI agents handle sensitive data in compliance with data protection regulations.
