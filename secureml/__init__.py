@@ -5,7 +5,7 @@ This library provides tools for handling sensitive data in AI/ML workflows
 while maintaining compliance with privacy regulations like GDPR, CCPA, and HIPAA.
 """
 
-__version__ = "0.1.9-alpha"
+__version__ = "0.2.0"
 
 # Export core functions for easier imports
 from secureml.anonymization import anonymize
@@ -25,7 +25,8 @@ from secureml.presets import (
 # Import audit trail and reporting functionality
 from secureml.audit import AuditTrail, audit_function, get_audit_logs
 from secureml.reporting import ReportGenerator
-# Import key management functionality
+# Import key management functionality directly from the .py file not the package
+# to avoid circular imports
 from secureml.key_management import (
     configure_default_key_manager,
     get_encryption_key,

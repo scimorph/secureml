@@ -30,7 +30,7 @@ SecureML is an open-source Python library that integrates with popular machine l
 ## Installation
 > **Disclaimer**: Due to Tensorflow-privacy compatibility issues, SecureML is only available up to Python 3.11. We will update as soon as Tensorflow-privacy releases a version compatible to Python 3.12+
 
-With pip (Python 3.9 - 3.11):
+With pip (Python 3.11):
 ```bash
 pip install secureml
 ```

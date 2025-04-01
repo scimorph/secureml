@@ -46,3 +46,7 @@ docs/api/
 # OS specific
 .DS_Store
 Thumbs.db 
+
+# Documentation files
+.bat
+Makefile
