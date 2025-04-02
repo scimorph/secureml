@@ -30,9 +30,8 @@ The library provides tools for:
    installation
    quickstart
    user_guide/index
-   features/index
    examples/index
-   api_reference/index
+   api/index
    contributing
    changelog
 
