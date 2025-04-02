@@ -7,7 +7,7 @@ SecureML can be installed using pip or poetry, with various optional components 
 Requirements
 -----------
 
-* Python 3.11 or higher
+* Python 3.11
 * Operating Systems: Linux, macOS, Windows
 
 Basic Installation

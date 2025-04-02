@@ -19,361 +19,279 @@ Basic Usage
 Generating Synthetic Data
 ^^^^^^^^^^^^^^^^^^^^^^^
 
-The simplest way to generate synthetic data is to use the ``generate_synthetic_data`` function:
+The main function for generating synthetic data is ``generate_synthetic_data``:
 
 .. code-block:: python
 
-    from secureml.synthetic_data import generate_synthetic_data
+    from secureml.synthetic import generate_synthetic_data
     
     # Generate synthetic data
     synthetic_df = generate_synthetic_data(
-        data=original_df,
-        method='gan',  # Options: 'gan', 'tvae', 'ctgan', 'copula', 'bayesian_network'
-        categorical_columns=['gender', 'occupation', 'education'],
-        continuous_columns=['age', 'income', 'height', 'weight'],
-        privacy_protection=True  # Apply additional privacy protections
+        template=original_df,
+        num_samples=1000,
+        method="statistical",  # Options: "simple", "statistical", "sdv-copula", "sdv-ctgan", "sdv-tvae", "gan", "copula"
+        sensitive_columns=["name", "email", "ssn", "phone"],
+        seed=42
     )
 
-For more control, you can use model-specific classes:
+Automatic Detection of Sensitive Columns
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-**GAN-based Synthetic Data**
+SecureML can automatically detect sensitive columns in your data:
 
 .. code-block:: python
 
-    from secureml.synthetic_data import TabularGAN
+    from secureml.synthetic import generate_synthetic_data
     
-    # Configure the GAN model
-    gan = TabularGAN(
-        batch_size=500,
-        epochs=300,
-        categorical_columns=['gender', 'occupation', 'education'],
-        continuous_columns=['age', 'income', 'height', 'weight'],
-        differential_privacy=True,  # Apply DP during training
-        epsilon=3.0,
-        delta=1e-5
+    # Generate synthetic data with automatic sensitive column detection
+    synthetic_df = generate_synthetic_data(
+        template=original_df,
+        num_samples=1000,
+        method="statistical",
+        sensitivity_detection={
+            "auto_detect": True,
+            "confidence_threshold": 0.7,
+            "sample_size": 100
+        }
     )
-    
-    # Train the model
-    gan.fit(original_df)
-    
-    # Generate synthetic data
-    synthetic_df = gan.sample(n_samples=len(original_df))
-    
-    # Save the trained generator for future use
-    gan.save('my_synthetic_generator.pkl')
-    
-    # Load a saved generator
-    from secureml.synthetic_data import load_synthetic_model
-    loaded_gan = load_synthetic_model('my_synthetic_generator.pkl')
-
-Advanced Techniques
-------------------
-
-Conditional Generation
-^^^^^^^^^^^^^^^^^^^^
-
-Generate synthetic data with specific characteristics:
-
-.. code-block:: python
-
-    from secureml.synthetic_data import ConditionalTabularGAN
-    
-    # Initialize the conditional GAN
-    cgan = ConditionalTabularGAN(
-        categorical_columns=['gender', 'occupation', 'education'],
-        continuous_columns=['age', 'income', 'height', 'weight'],
-        conditional_columns=['gender', 'age']  # Columns we want to condition on
-    )
-    
-    # Train the model
-    cgan.fit(original_df)
-    
-    # Generate synthetic data conditioned on specific values
-    synthetic_males = cgan.sample(
-        n_samples=1000,
-        conditions={'gender': 'male', 'age': (25, 40)}  # Males aged 25-40
-    )
-    
-    synthetic_females = cgan.sample(
-        n_samples=1000,
-        conditions={'gender': 'female', 'age': (25, 40)}  # Females aged 25-40
-    )
-
-Sequential Data Generation
-^^^^^^^^^^^^^^^^^^^^^^^^
-
-For time series or sequential data:
-
-.. code-block:: python
-
-    from secureml.synthetic_data import TimeSeriesGAN
-    
-    # Initialize the TimeSeriesGAN
-    ts_gan = TimeSeriesGAN(
-        sequence_length=24,  # Length of each sequence
-        features=original_timeseries.shape[2],  # Number of features per time step
-        hidden_dim=100,
-        epochs=500
-    )
-    
-    # Train the model
-    ts_gan.fit(original_timeseries)
-    
-    # Generate synthetic time series
-    synthetic_timeseries = ts_gan.sample(n_sequences=1000)
-
-Differential Privacy Integration
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Apply differential privacy to synthetic data generation:
-
-.. code-block:: python
-
-    from secureml.synthetic_data import DPTabularVAE
-    
-    # Initialize the DP-VAE
-    dp_vae = DPTabularVAE(
-        categorical_columns=['gender', 'occupation', 'education'],
-        continuous_columns=['age', 'income', 'height', 'weight'],
-        epsilon=1.0,
-        delta=1e-5,
-        latent_dim=50,
-        encoder_layers=[128, 64],
-        decoder_layers=[64, 128]
-    )
-    
-    # Train with differential privacy
-    dp_vae.fit(original_df)
-    
-    # Generate synthetic data
-    synthetic_df = dp_vae.sample(n_samples=len(original_df))
 
 Supported Methods
 ---------------
 
 SecureML supports several synthetic data generation methods:
 
-**Tabular GAN (TGAN/CTGAN)**
+Simple Random Sampling
+^^^^^^^^^^^^^^^^^^^
 
-Ideal for complex tabular data with mixed data types:
+Basic method suitable for quick prototyping:
 
 .. code-block:: python
 
-    from secureml.synthetic_data import CTGAN
+    # Generate synthetic data using simple method
+    synthetic_df = generate_synthetic_data(
+        template=original_df,
+        num_samples=1000,
+        method="simple",
+        sensitive_columns=["name", "email", "ssn"]
+    )
+
+Statistical Method
+^^^^^^^^^^^^^^^
+
+More sophisticated method that preserves statistical relationships:
+
+.. code-block:: python
+
+    # Generate synthetic data using statistical method
+    synthetic_df = generate_synthetic_data(
+        template=original_df,
+        num_samples=1000,
+        method="statistical",
+        sensitive_columns=["name", "email", "ssn"],
+        preserve_dtypes=True,
+        preserve_outliers=True,
+        categorical_threshold=20,
+        handle_skewness=True,
+        seed=42
+    )
+
+SDV Integration Methods
+^^^^^^^^^^^^^^^^^^^^^
+
+Integration with the Synthetic Data Vault (SDV) library for advanced generation (requires SDV to be installed):
+
+.. code-block:: python
+
+    # Generate synthetic data using SDV's Gaussian Copula
+    synthetic_df = generate_synthetic_data(
+        template=original_df,
+        num_samples=1000,
+        method="sdv-copula",
+        sensitive_columns=["name", "email", "ssn"],
+        anonymize_fields=True
+    )
     
-    ctgan = CTGAN(
-        categorical_columns=['gender', 'occupation', 'education'],
+    # Generate synthetic data using SDV's CTGAN
+    synthetic_df = generate_synthetic_data(
+        template=original_df,
+        num_samples=1000,
+        method="sdv-ctgan",
+        sensitive_columns=["name", "email", "ssn"],
+        anonymize_fields=True,
         epochs=300,
         batch_size=500
     )
     
-    ctgan.fit(original_df)
-    synthetic_df = ctgan.sample(n_samples=len(original_df))
+    # Generate synthetic data using SDV's TVAE
+    synthetic_df = generate_synthetic_data(
+        template=original_df,
+        num_samples=1000,
+        method="sdv-tvae",
+        sensitive_columns=["name", "email", "ssn"],
+        anonymize_fields=True
+    )
 
-**Tabular VAE**
+GAN-based Method
+^^^^^^^^^^^^^
 
-Variational Autoencoders for tabular data:
+Generative Adversarial Network approach (without requiring SDV):
 
 .. code-block:: python
 
-    from secureml.synthetic_data import TabularVAE
-    
-    tvae = TabularVAE(
-        categorical_columns=['gender', 'occupation', 'education'],
-        continuous_columns=['age', 'income', 'height', 'weight'],
-        latent_dim=20
+    # Generate synthetic data using GAN method
+    synthetic_df = generate_synthetic_data(
+        template=original_df,
+        num_samples=1000,
+        method="gan",
+        sensitive_columns=["name", "email", "ssn"],
+        epochs=300,
+        batch_size=32,
+        generator_dim=[128, 128],
+        discriminator_dim=[128, 128],
+        learning_rate=0.001,
+        noise_dim=100,
+        preserve_dtypes=True
     )
-    
-    tvae.fit(original_df)
-    synthetic_df = tvae.sample(n_samples=len(original_df))
 
-**Copula-based Methods**
+Copula-based Method
+^^^^^^^^^^^^^^^
 
-For preserving complex dependencies between variables:
+Copula method for capturing variable dependencies:
 
 .. code-block:: python
 
-    from secureml.synthetic_data import GaussianCopula
-    
-    copula = GaussianCopula(
-        categorical_columns=['gender', 'occupation', 'education'],
-        continuous_columns=['age', 'income', 'height', 'weight']
+    # Generate synthetic data using copula method
+    synthetic_df = generate_synthetic_data(
+        template=original_df,
+        num_samples=1000,
+        method="copula",
+        sensitive_columns=["name", "email", "ssn"],
+        copula_type="gaussian",
+        fit_method="ml",
+        preserve_dtypes=True,
+        handle_missing="mean",
+        categorical_threshold=20,
+        handle_skewness=True,
+        seed=42
     )
-    
-    copula.fit(original_df)
-    synthetic_df = copula.sample(n_samples=len(original_df))
 
-**Bayesian Networks**
+Providing Data Schema Instead of Template DataFrame
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-For datasets with strong conditional dependencies:
+You can generate synthetic data using a schema definition instead of an actual DataFrame:
 
 .. code-block:: python
 
-    from secureml.synthetic_data import BayesianNetworkSynthesizer
+    # Define a schema
+    schema = {
+        "columns": {
+            "age": "int",
+            "income": "float",
+            "gender": "category",
+            "education": "category"
+        }
+    }
     
-    bn = BayesianNetworkSynthesizer(
-        categorical_columns=['gender', 'occupation', 'education'],
-        continuous_columns=['age', 'income', 'height', 'weight'],
-        max_parents=3  # Maximum number of parent nodes in the Bayesian network
+    # Generate synthetic data from schema
+    synthetic_df = generate_synthetic_data(
+        template=schema,
+        num_samples=1000,
+        method="statistical"
     )
-    
-    bn.fit(original_df)
-    synthetic_df = bn.sample(n_samples=len(original_df))
 
-Evaluating Synthetic Data
-----------------------
+Advanced Usage
+-------------
 
-Measuring the Quality of Synthetic Data
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+SDV Constraints
+^^^^^^^^^^^^
 
-SecureML provides tools to evaluate synthetic data quality:
+When using SDV methods, you can specify constraints on the generated data:
 
 .. code-block:: python
 
-    from secureml.synthetic_data.evaluation import evaluate_synthetic_data
+    # Define constraints for SDV methods
+    constraints = [
+        {"type": "unique", "columns": ["id"]},
+        {"type": "fixed_combinations", "column_names": ["state", "city"]},
+        {"type": "inequality", "low_column": "min_salary", "high_column": "max_salary"}
+    ]
     
-    # Comprehensive evaluation
-    evaluation_results = evaluate_synthetic_data(
-        real_data=original_df,
-        synthetic_data=synthetic_df,
-        categorical_columns=['gender', 'occupation', 'education'],
-        continuous_columns=['age', 'income', 'height', 'weight'],
-        metrics=['statistical_similarity', 'privacy_metrics', 'ml_efficacy']
+    # Generate synthetic data with constraints
+    synthetic_df = generate_synthetic_data(
+        template=original_df,
+        num_samples=1000,
+        method="sdv-copula",
+        constraints=constraints
     )
-    
-    # Print summary
-    print(evaluation_results.summary())
-    
-    # Generate detailed report
-    evaluation_results.generate_report('synthetic_data_evaluation.html')
 
-Specific Metrics
-^^^^^^^^^^^^^^^^^^
+Handling Sensitive Information
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-You can also compute specific metrics:
+The function automatically generates realistic but fake data for sensitive columns:
 
 .. code-block:: python
 
-    from secureml.synthetic_data.evaluation import (
-        statistical_similarity_score,
-        privacy_risk_score,
-        machine_learning_efficacy
+    # Generate synthetic data with sensitive column handling
+    synthetic_df = generate_synthetic_data(
+        template=original_df,
+        num_samples=1000,
+        method="statistical",
+        sensitive_columns=["name", "email", "phone", "ssn", "credit_card"]
     )
-    
-    # Statistical similarity
-    stat_score = statistical_similarity_score(
-        real_data=original_df,
-        synthetic_data=synthetic_df,
-        categorical_columns=['gender', 'occupation', 'education'],
-        continuous_columns=['age', 'income', 'height', 'weight']
-    )
-    print(f"Statistical similarity score: {stat_score:.4f}")
-    
-    # Privacy risk
-    privacy_score = privacy_risk_score(
-        real_data=original_df,
-        synthetic_data=synthetic_df,
-        metrics=['identifiability', 'membership_inference', 'attribute_disclosure']
-    )
-    print(f"Privacy risk score: {privacy_score:.4f}")
-    
-    # ML efficacy
-    ml_score = machine_learning_efficacy(
-        real_data=original_df,
-        synthetic_data=synthetic_df,
-        target_column='income',
-        task_type='regression'
-    )
-    print(f"ML efficacy score: {ml_score:.4f}")
-
-Privacy Risk Assessment
-^^^^^^^^^^^^^^^^^^^^^
-
-Assessing the privacy risks in synthetic data:
-
-.. code-block:: python
-
-    from secureml.synthetic_data.privacy import run_privacy_attacks
-    
-    # Run privacy attacks to assess risk
-    attack_results = run_privacy_attacks(
-        real_data=original_df,
-        synthetic_data=synthetic_df,
-        attack_types=['membership_inference', 'attribute_inference', 'model_inversion'],
-        n_experiments=10
-    )
-    
-    # Print attack success rates
-    for attack, success_rate in attack_results.items():
-        print(f"{attack} success rate: {success_rate:.4f}")
 
 Best Practices
 -------------
 
-1. **Start with the right method**: Choose the synthetic data generation method based on your data characteristics:
-   - For complex tabular data with mixed types: CTGAN or TabularVAE
-   - For time series data: TimeSeriesGAN
-   - For highly structured data with known dependencies: Bayesian Networks
-   - For simpler datasets with normal distributions: Copula methods
+1. **Choose the right method**: Select the generation method based on your data characteristics:
+   - For simple datasets with low complexity: "simple"
+   - For general-purpose generation with good statistical properties: "statistical"
+   - For complex tabular data with mixed types: "sdv-ctgan" or "sdv-tvae"
+   - For data with important correlations: "sdv-copula" or "copula"
 
-2. **Proper data preprocessing**: Clean and preprocess your data before generating synthetic versions
+2. **Automatic sensitive column detection**: When in doubt about which columns are sensitive, use the automatic detection feature.
 
-3. **Balance privacy and utility**: Adjust privacy parameters to find the right balance between protection and usefulness
+3. **Seed for reproducibility**: Always set a seed when you need reproducible results.
 
-4. **Always evaluate**: Thoroughly evaluate the synthetic data for both utility and privacy before using it in production
+4. **Evaluate your synthetic data**: Check that the synthetic data preserves important statistical properties while providing sufficient privacy protection.
 
-5. **Use domain knowledge**: Incorporate domain-specific constraints to make synthetic data more realistic
+5. **Balance privacy and utility**: Adjust parameters to find the right balance between privacy protection and synthetic data utility.
 
-6. **Combine with other privacy techniques**: For maximum protection, combine synthetic data with other privacy techniques like differential privacy
+Example Workflow
+--------------
 
-Case Studies
-----------
-
-Healthcare Data Synthesis
-^^^^^^^^^^^^^^^^^^^^^^
+Complete workflow for generating and checking synthetic data:
 
 .. code-block:: python
 
-    from secureml.synthetic_data import CTGAN
     import pandas as pd
+    from secureml.synthetic import generate_synthetic_data
     
-    # Load patient data
-    patient_data = pd.read_csv('patient_records.csv')
+    # Load original data
+    original_df = pd.read_csv("customer_data.csv")
     
-    # Define column types
-    categorical_cols = ['gender', 'blood_type', 'diagnosis', 'medication']
-    continuous_cols = ['age', 'height', 'weight', 'blood_pressure', 'cholesterol']
-    
-    # Initialize the CTGAN model with privacy protections
-    ctgan = CTGAN(
-        categorical_columns=categorical_cols,
-        epochs=500,
-        batch_size=1000,
-        differential_privacy=True,
-        epsilon=3.0
+    # Generate synthetic data with automatic sensitive column detection
+    synthetic_df = generate_synthetic_data(
+        template=original_df,
+        num_samples=len(original_df),
+        method="statistical",
+        sensitivity_detection={"auto_detect": True, "confidence_threshold": 0.7},
+        seed=42,
+        preserve_dtypes=True,
+        handle_skewness=True
     )
     
-    # Fit the model
-    ctgan.fit(patient_data)
+    # Save synthetic data
+    synthetic_df.to_csv("synthetic_customer_data.csv", index=False)
     
-    # Generate synthetic patient data
-    synthetic_patients = ctgan.sample(n_samples=10000)
-    
-    # Evaluate the quality
-    from secureml.synthetic_data.evaluation import evaluate_synthetic_data
-    evaluation = evaluate_synthetic_data(
-        real_data=patient_data,
-        synthetic_data=synthetic_patients,
-        categorical_columns=categorical_cols,
-        continuous_columns=continuous_cols
-    )
-    
-    # Save the synthetic data
-    synthetic_patients.to_csv('synthetic_patient_data.csv', index=False)
+    # Basic validation - check column distributions
+    for col in original_df.select_dtypes(include=['number']).columns:
+        print(f"Column: {col}")
+        print(f"Original mean: {original_df[col].mean()}, std: {original_df[col].std()}")
+        print(f"Synthetic mean: {synthetic_df[col].mean()}, std: {synthetic_df[col].std()}")
+        print()
 
 Further Reading
 -------------
 
 * :doc:`/api/synthetic_data` - Complete API reference for synthetic data functions
-* :doc:`/examples/synthetic_data` - More examples of synthetic data generation techniques
-* `CTGAN: Modeling Tabular data using Conditional GAN <https://arxiv.org/abs/1907.00503>`_ - Original CTGAN paper 
+* :doc:`/examples/synthetic_data` - More examples of synthetic data generation techniques 

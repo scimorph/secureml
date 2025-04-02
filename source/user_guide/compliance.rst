@@ -7,309 +7,258 @@ Compliance checking is a critical component of privacy-preserving machine learni
 Core Concepts
 ------------
 
-**Regulation Frameworks**: SecureML supports checks against major privacy regulations including:
+**Compliance Report**: A structured report containing compliance check results, including issues, warnings, and passed checks.
+
+**Supported Regulations**: SecureML supports checks against major privacy regulations:
 
 * **GDPR**: General Data Protection Regulation (European Union)
 * **CCPA**: California Consumer Privacy Act
 * **HIPAA**: Health Insurance Portability and Accountability Act
-* **PCI DSS**: Payment Card Industry Data Security Standard
-* **Custom frameworks**: Define your own compliance requirements
 
 **Compliance Levels**:
 
-* **Dataset-level compliance**: Verifying data handling practices
-* **Model-level compliance**: Ensuring models don't leak sensitive information
-* **System-level compliance**: Checking the entire machine learning pipeline
+* **Dataset-level compliance**: Detecting personal data and PHI in datasets
+* **Model-level compliance**: Verifying that models support privacy requirements
+* **Pipeline-level compliance**: Checking the entire machine learning pipeline
 
 Basic Usage
 ----------
 
-Checking Dataset Compliance
+Basic Compliance Check
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-To check if a dataset complies with privacy regulations:
-
-.. code-block:: python
-
-    from secureml.compliance import check_dataset_compliance
-    
-    # Check dataset compliance
-    compliance_report = check_dataset_compliance(
-        data=df,
-        regulations=['gdpr', 'ccpa'],
-        sensitive_attributes=['ssn', 'name', 'address', 'dob'],
-        quasi_identifiers=['zipcode', 'age', 'gender'],
-        data_purpose='marketing_analytics',
-        data_origin='customer_database'
-    )
-    
-    # Print compliance status
-    print(f"Overall compliance: {compliance_report.is_compliant}")
-    
-    # Get detailed findings
-    if not compliance_report.is_compliant:
-        for issue in compliance_report.issues:
-            print(f"- {issue.severity}: {issue.description}")
-    
-    # Generate compliance report in various formats
-    compliance_report.to_pdf('compliance_report.pdf')
-    compliance_report.to_json('compliance_report.json')
-    compliance_report.to_html('compliance_report.html')
-
-Checking Model Compliance
-^^^^^^^^^^^^^^^^^^^^^^^
-
-To check if a model complies with privacy regulations:
-
-.. code-block:: python
-
-    from secureml.compliance import check_model_compliance
-    
-    # Check model compliance
-    model_compliance = check_model_compliance(
-        model=trained_model,
-        training_data=training_df,
-        regulations=['gdpr', 'hipaa'],
-        model_purpose='patient_diagnosis',
-        model_type='classification'
-    )
-    
-    # Print compliance status
-    print(f"Model compliance: {model_compliance.is_compliant}")
-    
-    # Get detailed issues
-    for issue in model_compliance.issues:
-        print(f"- {issue.severity}: {issue.description}")
-        print(f"  Recommendation: {issue.recommendation}")
-
-Combined Compliance Check
-^^^^^^^^^^^^^^^^^^^^^^
-
-For a comprehensive check of both data and model:
+The simplest way to check compliance is using the `check_compliance` function:
 
 .. code-block:: python
 
     from secureml.compliance import check_compliance
+    import pandas as pd
     
-    # Comprehensive compliance check
-    compliance_report = check_compliance(
-        data=df,
-        model=trained_model,
-        regulations=['gdpr', 'ccpa', 'hipaa'],
-        sensitive_attributes=['ssn', 'patient_id', 'name'],
-        quasi_identifiers=['zipcode', 'age', 'gender'],
-        data_purpose='healthcare_analytics',
-        model_purpose='patient_risk_assessment'
+    # Sample dataset
+    data = pd.DataFrame({
+        'name': ['Alice Smith', 'Bob Johnson'],
+        'age': [30, 45],
+        'email': ['alice@example.com', 'bob@example.com'],
+        'diagnosis': ['Flu', 'Diabetes']
+    })
+    
+    # Check compliance with GDPR
+    report = check_compliance(
+        data=data,
+        regulation="GDPR",
+        max_samples=100  # Maximum number of samples to analyze
     )
     
-    # Get compliance summary
-    print(compliance_report.summary())
-
-Advanced Techniques
-------------------
-
-Creating Custom Compliance Rules
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Define custom compliance requirements:
-
-.. code-block:: python
-
-    from secureml.compliance import ComplianceFramework, ComplianceRule, Severity
+    # Print the report
+    print(report)
     
-    # Create custom rules
-    custom_rules = [
-        ComplianceRule(
-            id='custom-rule-001',
-            name='No email addresses in dataset',
-            description='Dataset should not contain email addresses',
-            check_function=lambda data: 'email' not in data.columns,
-            severity=Severity.HIGH,
-            recommendation='Remove or anonymize email column'
-        ),
-        ComplianceRule(
-            id='custom-rule-002',
-            name='Age binning required',
-            description='Age must be binned in groups of at least 5 years',
-            check_function=lambda data: not ('age' in data.columns and data['age'].nunique() > 20),
-            severity=Severity.MEDIUM,
-            recommendation='Bin age into 5-year groups'
-        )
-    ]
-    
-    # Create custom framework
-    internal_framework = ComplianceFramework(
-        id='internal-privacy-policy',
-        name='Internal Privacy Policy',
-        version='1.0',
-        rules=custom_rules
-    )
-    
-    # Register the framework
-    from secureml.compliance import register_framework
-    register_framework(internal_framework)
-    
-    # Use the custom framework in compliance checks
-    compliance_report = check_dataset_compliance(
-        data=df,
-        regulations=['internal-privacy-policy', 'gdpr'],
-        sensitive_attributes=['ssn', 'name', 'address']
-    )
+    # Check compliance status
+    if report.has_issues():
+        print("Compliance issues found!")
+        for issue in report.issues:
+            print(f"- {issue['severity']}: {issue['issue']}")
+            print(f"  Recommendation: {issue['recommendation']}")
 
-Continuous Compliance Monitoring
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Set up automated compliance checks:
-
-.. code-block:: python
-
-    from secureml.compliance import ComplianceMonitor
-    
-    # Create a compliance monitor
-    monitor = ComplianceMonitor(
-        regulations=['gdpr', 'ccpa'],
-        schedule='daily',  # Options: 'hourly', 'daily', 'weekly'
-        notification_email='privacy@example.com',
-        fail_on_non_compliance=True
-    )
-    
-    # Register assets to monitor
-    monitor.register_dataset(
-        data=customer_data,
-        name='customer_database',
-        sensitive_attributes=['ssn', 'credit_card']
-    )
-    
-    monitor.register_model(
-        model=recommendation_model,
-        name='recommendation_engine',
-        training_data=training_data
-    )
-    
-    # Start monitoring
-    monitor.start()
-    
-    # Stop monitoring
-    monitor.stop()
-
-Specific Regulation Checks
+Using ComplianceAuditor
 ^^^^^^^^^^^^^^^^^^^^^^^
 
-Perform checks focused on specific regulations:
-
-**GDPR-specific checks:**
+For more comprehensive audits, use the `ComplianceAuditor` class:
 
 .. code-block:: python
 
-    from secureml.compliance.gdpr import check_gdpr_compliance
+    from secureml.compliance import ComplianceAuditor
     
-    gdpr_report = check_gdpr_compliance(
-        data=df,
-        data_purpose='customer_analytics',
-        has_consent=True,
-        retention_period_days=90,
-        data_subject_access_mechanism='api',
-        right_to_be_forgotten_implemented=True,
-        cross_border_transfers=['eu', 'usa']
+    # Create an auditor for GDPR
+    auditor = ComplianceAuditor(
+        regulation="GDPR",
+        log_dir="audit_logs"  # Optional: directory to store audit logs
     )
-    
-    # Check specific GDPR article compliance
-    article_5_compliance = gdpr_report.get_article_compliance('article_5')
-    print(f"Article 5 compliance: {article_5_compliance.is_compliant}")
 
-**HIPAA-specific checks:**
+Dataset Audit
+~~~~~~~~~~~~
+
+Audit a dataset for compliance:
 
 .. code-block:: python
 
-    from secureml.compliance.hipaa import check_hipaa_compliance
-    
-    hipaa_report = check_hipaa_compliance(
-        data=patient_data,
-        phi_attributes=['patient_name', 'medical_record_number', 'treatment_codes'],
-        has_authorization=True,
-        minimum_necessary_applied=True,
-        security_measures={
-            'encryption_at_rest': True,
-            'encryption_in_transit': True,
-            'access_controls': True,
-            'audit_trails': True
+    # Audit a dataset with metadata
+    dataset_report = auditor.audit_dataset(
+        dataset=data,
+        dataset_name="patient_records",
+        metadata={
+            "description": "Patient medical records",
+            "data_owner": "Hospital A", 
+            "data_retention_period": "5 years",
+            "data_encrypted": True,
+            "data_storage_location": "EU"
         }
     )
     
-    print(f"HIPAA compliance: {hipaa_report.is_compliant}")
+    # Print the report
+    print(dataset_report)
 
-Privacy Impact Assessment
-^^^^^^^^^^^^^^^^^^^^^^
+Model Audit
+~~~~~~~~~~
 
-Conduct a full privacy impact assessment:
-
-.. code-block:: python
-
-    from secureml.compliance import privacy_impact_assessment
-    
-    pia_results = privacy_impact_assessment(
-        data=df,
-        model=trained_model,
-        application_name='Customer Churn Prediction',
-        data_flows=[
-            {'source': 'CRM System', 'destination': 'Analytics Platform', 'data_elements': ['customer_id', 'purchase_history']},
-            {'source': 'Analytics Platform', 'destination': 'Marketing System', 'data_elements': ['churn_risk_score']}
-        ],
-        data_retention_policy='90 days',
-        data_protection_measures=['encryption', 'access_control', 'anonymization'],
-        risk_mitigation_measures=['staff_training', 'regular_audits']
-    )
-    
-    # Generate formal PIA report
-    pia_results.generate_report('privacy_impact_assessment.docx')
-
-Data Protection by Design
-^^^^^^^^^^^^^^^^^^^^^
-
-Assess compliance with Data Protection by Design principles:
+Audit a model for compliance:
 
 .. code-block:: python
 
-    from secureml.compliance import assess_data_protection_by_design
-    
-    dpd_assessment = assess_data_protection_by_design(
-        ml_pipeline=pipeline,
-        principles_implemented={
-            'data_minimization': True,
-            'purpose_limitation': True,
-            'storage_limitation': True,
-            'privacy_by_default': True
+    # Model configuration
+    model_config = {
+        "model_type": "RandomForestClassifier",
+        "parameters": {
+            "n_estimators": 100,
+            "max_depth": 5
         },
-        documentation={
-            'privacy_notice': True,
-            'dpia_conducted': True,
-            'processing_records': True
+        "supports_forget_request": True,  # Supports GDPR right to be forgotten
+        "data_processing_purpose": "Medical diagnosis prediction"
+    }
+    
+    # Audit the model
+    model_report = auditor.audit_model(
+        model_config=model_config,
+        model_name="diagnosis_predictor",
+        model_documentation={
+            "version": "1.0",
+            "training_date": "2024-01-01",
+            "training_data_description": "Patient records from 2023"
         }
     )
     
-    print(dpd_assessment.summary())
+    print(model_report)
 
-Compliance Documentation Generation
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Full Pipeline Audit
+~~~~~~~~~~~~~~~~~
 
-Generate necessary compliance documentation:
+Audit an entire ML pipeline including preprocessing steps:
 
 .. code-block:: python
 
-    from secureml.compliance.documentation import generate_compliance_documentation
+    # Define preprocessing steps
+    preprocessing_steps = [
+        {
+            "name": "data_cleaning",
+            "type": "anonymization",
+            "input": "raw_data",
+            "output": "anonymized_data",
+            "parameters": {
+                "method": "k-anonymity",
+                "k": 2,
+                "sensitive_columns": ["name", "email", "phone"]
+            }
+        },
+        {
+            "name": "feature_selection",
+            "type": "minimization",
+            "input": "anonymized_data",
+            "output": "minimized_data",
+            "parameters": {
+                "selected_features": ["age", "diagnosis", "income"]
+            }
+        }
+    ]
     
-    # Generate documentation suite
-    docs = generate_compliance_documentation(
-        data=df,
-        model=trained_model,
-        regulations=['gdpr', 'ccpa'],
-        required_documents=['privacy_notice', 'processing_records', 'dpia', 'consent_form']
+    # Audit the entire pipeline
+    pipeline_report = auditor.audit_pipeline(
+        dataset=data,
+        dataset_name="patient_records",
+        model=model_config,
+        model_name="diagnosis_predictor",
+        preprocessing_steps=preprocessing_steps,
+        metadata={
+            "pipeline_version": "1.0",
+            "last_updated": "2024-01-01",
+            "data_owner": "Hospital A",
+            "data_encrypted": True
+        }
     )
     
-    # Save documents
-    for doc_name, doc_content in docs.items():
-        with open(f"{doc_name}.md", "w") as f:
-            f.write(doc_content)
+    # The pipeline audit returns a dictionary with individual component reports
+    for component, report in pipeline_report.items():
+        print(f"\n{component.upper()} Report:")
+        print(report)
+
+Generating PDF Reports
+-------------------
+
+Generate a detailed PDF report of the compliance audit:
+
+.. code-block:: python
+
+    # Generate PDF report from pipeline audit
+    pdf_path = auditor.generate_pdf(
+        audit_result=pipeline_report,
+        output_file="compliance_report.pdf",
+        title="Patient Records Pipeline Compliance Audit",
+        logo_path="company_logo.png"  # Optional
+    )
+
+How Compliance Checks Work
+-------------------------
+
+Identifying Sensitive Data
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+SecureML uses several approaches to identify sensitive data:
+
+1. **Column name analysis**: Checks column names against known patterns of sensitive data
+2. **Content analysis**: Uses NLP techniques to identify patterns in text data
+3. **Automated detection**: The `_identify_sensitive_columns` function can automatically detect potentially sensitive columns
+
+.. code-block:: python
+
+    from secureml.anonymization import _identify_sensitive_columns
+    
+    # Automatically identify sensitive columns
+    sensitive_cols = _identify_sensitive_columns(data)
+    print(f"Automatically identified sensitive columns: {sensitive_cols}")
+
+Regulation-Specific Checks
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+Each regulation has specific checks based on its requirements:
+
+**GDPR Checks**:
+- Personal data identification
+- Special category data identification
+- Data minimization
+- Explicit consent
+- Right to be forgotten capability
+- Cross-border data transfer
+
+**CCPA Checks**:
+- Personal information identification
+- California residents' data handling
+- Sale of personal information
+- Deletion capability
+
+**HIPAA Checks**:
+- Protected Health Information (PHI) identification
+- De-identification method verification
+- Data security and encryption
+
+Regulation Presets
+----------------
+
+SecureML uses presets for each regulation stored in YAML files. You can access preset information programmatically:
+
+.. code-block:: python
+
+    from secureml.presets import list_available_presets, load_preset, get_preset_field
+    
+    # List available regulation presets
+    available_presets = list_available_presets()
+    print(f"Available regulations: {available_presets}")
+    
+    # Load a specific preset
+    gdpr_preset = load_preset("gdpr")
+    
+    # Get specific field from a preset
+    personal_data_identifiers = get_preset_field("gdpr", "personal_data_identifiers")
+    special_categories = get_preset_field("gdpr", "special_categories")
+    
+    print(f"GDPR personal data identifiers: {personal_data_identifiers}")
 
 Best Practices
 -------------
@@ -320,13 +269,15 @@ Best Practices
 
 3. **Document everything**: Maintain detailed records of compliance checks and actions taken to address issues
 
-4. **Stay updated**: Regularly update compliance checks as regulations and internal policies evolve
+4. **Add appropriate metadata**: Include information about data sources, consent, processing purpose, etc.
 
-5. **Automate checks**: Implement continuous compliance monitoring in ML pipelines
+5. **Regular audits**: Schedule regular compliance audits of your ML systems 
 
-6. **Involve experts**: Consult with legal and privacy experts when designing compliance checks
+6. **Integrate with audit trails**: Use audit trails to document compliance activities
 
-7. **Balance with utility**: Find the right balance between compliance requirements and model utility
+7. **Remediate issues**: Address identified compliance issues promptly
+
+8. **Stay updated**: Keep abreast of changes in regulations that may affect compliance requirements
 
 Further Reading
 -------------

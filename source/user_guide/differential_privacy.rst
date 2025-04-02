@@ -25,131 +25,56 @@ The simplest way to train a model with differential privacy is to use the ``diff
 
 .. code-block:: python
 
-    from secureml.differential_privacy import differentially_private_train
+    from secureml.privacy import differentially_private_train
+    import tensorflow as tf  # or import torch for PyTorch
     
-    # Train a model with differential privacy
+    # Create a model (TensorFlow example)
+    model = tf.keras.Sequential([
+        tf.keras.layers.Dense(64, activation='relu', input_shape=(10,)),
+        tf.keras.layers.Dense(1, activation='sigmoid')
+    ])
+    
+    # Train the model with differential privacy
     dp_model = differentially_private_train(
-        model_type='logistic_regression',  # Supported models: 'logistic_regression', 'random_forest', 'neural_network'
-        X_train=X_train,
-        y_train=y_train,
+        model=model,
+        data=training_data,  # DataFrame or numpy array
         epsilon=1.0,  # Privacy budget
         delta=1e-5,   # Probability of privacy breach
         max_grad_norm=1.0,  # Maximum gradient norm for clipping
         noise_multiplier=None,  # If None, calculated from epsilon and delta
-        batch_size=64
+        batch_size=64,
+        epochs=10
     )
     
     # Make predictions with the differentially private model
     predictions = dp_model.predict(X_test)
 
-For more control, you can use the ``DPTrainer`` class:
+SecureML automatically detects whether you're using PyTorch or TensorFlow based on the model you provide. You can also explicitly specify the framework:
 
 .. code-block:: python
 
-    from secureml.differential_privacy import DPTrainer
-    from sklearn.linear_model import LogisticRegression
-    
-    # Create a base model
-    base_model = LogisticRegression()
-    
-    # Set up the differential privacy trainer
-    dp_trainer = DPTrainer(
-        model=base_model,
+    # Specify the framework explicitly
+    dp_model = differentially_private_train(
+        model=model,
+        data=training_data,
         epsilon=1.0,
         delta=1e-5,
-        max_grad_norm=1.0,
-        noise_multiplier=None,
-        batch_size=64
+        framework="tensorflow"  # or "pytorch"
     )
-    
-    # Train the model with differential privacy
-    dp_trainer.fit(X_train, y_train)
-    
-    # Get the trained model
-    dp_model = dp_trainer.model
-    
-    # Check the privacy cost
-    actual_epsilon = dp_trainer.get_epsilon()
-    print(f"Actual epsilon spent: {actual_epsilon}")
-
-Advanced Techniques
-------------------
-
-Privacy Accounting
-^^^^^^^^^^^^^^^^
-
-SecureML provides tools to track privacy budget usage:
-
-.. code-block:: python
-
-    from secureml.differential_privacy import PrivacyAccountant
-    
-    # Create a privacy accountant
-    accountant = PrivacyAccountant(
-        n_samples=len(X_train),
-        delta=1e-5
-    )
-    
-    # Record training steps
-    for epoch in range(10):
-        # Do some training iterations...
-        accountant.step(noise_multiplier=1.1, batch_size=64)
-        
-        # Check current epsilon
-        current_epsilon = accountant.get_epsilon()
-        print(f"Epsilon after epoch {epoch+1}: {current_epsilon}")
-        
-        # Check if we've exceeded our privacy budget
-        if current_epsilon > 1.0:
-            print("Privacy budget exceeded, stopping training")
-            break
-
-Adaptive Clipping
-^^^^^^^^^^^^^^^
-
-Adaptive clipping adjusts the gradient clipping threshold based on observed gradients:
-
-.. code-block:: python
-
-    from secureml.differential_privacy import DPTrainer
-    
-    dp_trainer = DPTrainer(
-        model=base_model,
-        epsilon=1.0,
-        delta=1e-5,
-        adaptive_clipping=True,
-        clipping_quantile=0.9,  # Use the 90th percentile for clipping
-        initial_max_grad_norm=1.0
-    )
-    
-    dp_trainer.fit(X_train, y_train)
 
 Supported Frameworks
 ------------------
 
 SecureML supports differential privacy for multiple ML frameworks:
 
-**Scikit-learn Integration**
+**PyTorch Integration with Opacus**
+
+For PyTorch models, SecureML uses the Opacus library under the hood:
 
 .. code-block:: python
 
-    from secureml.differential_privacy.sklearn import DPLogisticRegression, DPRandomForestClassifier
-    
-    # Create a differentially private logistic regression model
-    dp_logreg = DPLogisticRegression(epsilon=1.0, delta=1e-5)
-    dp_logreg.fit(X_train, y_train)
-    
-    # Create a differentially private random forest
-    dp_rf = DPRandomForestClassifier(epsilon=1.0, delta=1e-5, n_estimators=100)
-    dp_rf.fit(X_train, y_train)
-
-**PyTorch Integration**
-
-.. code-block:: python
-
-    from secureml.differential_privacy.torch import DPOptimizer
+    import torch
     import torch.nn as nn
-    import torch.optim as optim
     
     # Define a PyTorch model
     model = nn.Sequential(
@@ -158,59 +83,45 @@ SecureML supports differential privacy for multiple ML frameworks:
         nn.Linear(128, output_size)
     )
     
-    # Create a standard optimizer
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
-    
-    # Wrap it with the DP optimizer
-    dp_optimizer = DPOptimizer(
-        optimizer=optimizer,
-        noise_multiplier=1.0,
-        max_grad_norm=1.0,
+    # Train with differential privacy
+    dp_model = differentially_private_train(
+        model=model,
+        data=training_data,
+        epsilon=1.0,
+        delta=1e-5,
         batch_size=64,
-        sample_size=len(X_train)
+        epochs=10,
+        criterion=torch.nn.CrossEntropyLoss(),
+        learning_rate=0.001,
+        validation_split=0.2
     )
-    
-    # Training loop with the DP optimizer
-    for epoch in range(10):
-        dp_optimizer.zero_grad()
-        # Forward pass, loss computation
-        loss.backward()
-        dp_optimizer.step()
 
-**TensorFlow Integration**
+**TensorFlow Integration with TensorFlow Privacy**
+
+For TensorFlow models, SecureML uses TensorFlow Privacy in an isolated environment:
 
 .. code-block:: python
 
-    from secureml.differential_privacy.tensorflow import DPKerasOptimizer
     import tensorflow as tf
     
     # Create a Keras model
     model = tf.keras.Sequential([
         tf.keras.layers.Dense(128, activation='relu', input_shape=(input_size,)),
-        tf.keras.layers.Dense(output_size)
+        tf.keras.layers.Dense(output_size, activation='softmax')
     ])
     
-    # Create a base optimizer
-    optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+    model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
     
-    # Wrap it with the DP optimizer
-    dp_optimizer = DPKerasOptimizer(
-        optimizer=optimizer,
-        noise_multiplier=1.0,
-        l2_norm_clip=1.0,
+    # Train with differential privacy
+    dp_model = differentially_private_train(
+        model=model,
+        data=training_data,
+        epsilon=1.0,
+        delta=1e-5,
         batch_size=64,
-        sample_size=len(X_train)
+        epochs=10,
+        early_stopping_patience=3
     )
-    
-    # Compile the model with the DP optimizer
-    model.compile(
-        optimizer=dp_optimizer,
-        loss='categorical_crossentropy',
-        metrics=['accuracy']
-    )
-    
-    # Train the model
-    model.fit(X_train, y_train, epochs=10, batch_size=64)
 
 TensorFlow Privacy and Isolated Environments
 --------------------------------------------
@@ -230,7 +141,7 @@ When you specify ``framework="tensorflow"`` in the ``differentially_private_trai
 
 .. code-block:: python
 
-    from secureml import privacy
+    from secureml.privacy import differentially_private_train
     import tensorflow as tf
     
     # Create a model
@@ -243,7 +154,7 @@ When you specify ``framework="tensorflow"`` in the ``differentially_private_trai
 
     # Train with differential privacy using TensorFlow Privacy
     # This automatically uses the isolated environment
-    private_model = privacy.differentially_private_train(
+    private_model = differentially_private_train(
         model=model,
         data=training_data,
         epsilon=1.0,
@@ -267,70 +178,101 @@ To avoid delays during your first run, you can set up the TensorFlow Privacy env
 
 For more detailed information on how SecureML manages isolated environments, see the :doc:`isolated_environments` section.
 
-Privacy Budget Management
+Advanced Training Options
 -----------------------
 
-Managing the privacy budget across multiple operations:
+Both PyTorch and TensorFlow integrations support additional training parameters:
 
 .. code-block:: python
 
-    from secureml.differential_privacy import PrivacyBudgetManager
-    
-    # Initialize a privacy budget manager
-    budget_manager = PrivacyBudgetManager(
-        total_epsilon=3.0,
-        total_delta=1e-5
-    )
-    
-    # Allocate budget for training
-    training_epsilon, training_delta = budget_manager.allocate(
-        name='model_training',
-        fraction=0.7  # Use 70% of the budget for training
-    )
-    
-    # Train with the allocated budget
-    model = differentially_private_train(
-        model_type='logistic_regression',
-        X_train=X_train,
-        y_train=y_train,
-        epsilon=training_epsilon,
-        delta=training_delta
-    )
-    
-    # Allocate budget for evaluation
-    eval_epsilon, eval_delta = budget_manager.allocate(
-        name='model_evaluation',
-        fraction=0.3  # Use 30% of the budget for evaluation
-    )
-    
-    # Check remaining budget
-    remaining = budget_manager.get_remaining()
-    print(f"Remaining budget: epsilon={remaining['epsilon']}, delta={remaining['delta']}")
-
-Utility Metrics
--------------
-
-Evaluating the privacy-utility tradeoff:
-
-.. code-block:: python
-
-    from secureml.differential_privacy.metrics import privacy_utility_curve
-    
-    # Generate a privacy-utility curve
-    results = privacy_utility_curve(
-        model_class=LogisticRegression,
-        X_train=X_train,
-        y_train=y_train,
-        X_test=X_test,
-        y_test=y_test,
-        epsilons=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0],
+    # Common parameters for both frameworks
+    dp_model = differentially_private_train(
+        model=model,
+        data=training_data,
+        epsilon=1.0,
         delta=1e-5,
-        metric='accuracy',
-        n_runs=5  # Run multiple times to average out randomness
+        batch_size=64,
+        epochs=10,
+        learning_rate=0.001,
+        validation_split=0.2,
+        shuffle=True,
+        verbose=True,
+        early_stopping_patience=5  # Stop training if validation loss doesn't improve
+    )
+
+Data Preparation
+--------------
+
+The ``differentially_private_train`` function can handle both DataFrames and NumPy arrays:
+
+.. code-block:: python
+
+    # Using a DataFrame
+    dp_model = differentially_private_train(
+        model=model,
+        data=df,  # DataFrame where the last column is the target by default
+        target_column="label",  # Specify a different target column if needed
+        epsilon=1.0,
+        delta=1e-5
     )
     
-    # Plot the results
-    results.plot(x='epsilon', y='accuracy')
+    # Using NumPy arrays
+    dp_model = differentially_private_train(
+        model=model,
+        data=np.concatenate([X, y.reshape(-1, 1)], axis=1),  # Concatenate features and labels
+        epsilon=1.0,
+        delta=1e-5
+    )
+
+Monitoring Privacy Budget
+-----------------------
+
+Both frameworks provide information about the actual privacy budget spent during training. This is displayed in the output if ``verbose=True``:
+
+.. code-block:: python
+
+    # Train with differential privacy
+    dp_model = differentially_private_train(
+        model=model,
+        data=training_data,
+        epsilon=1.0,
+        delta=1e-5,
+        verbose=True  # Will show privacy budget spent after training
+    )
+
+In PyTorch (Opacus), you can also manually query the spent privacy budget:
+
+.. code-block:: python
+
+    from opacus import PrivacyEngine
+    
+    # After training with Opacus, the privacy engine has a get_epsilon method
+    privacy_engine = PrivacyEngine()
+    # Training code...
+    
+    # Get the privacy budget spent
+    spent_epsilon = privacy_engine.get_epsilon(delta=1e-5)
+    print(f"Privacy budget spent (ε = {spent_epsilon:.4f})")
+
+Integration with Federated Learning
+-------------------------------
+
+SecureML supports combining differential privacy with federated learning:
+
+.. code-block:: python
+
+    from secureml.federated import start_federated_client
+    
+    # Start a federated learning client with differential privacy
+    start_federated_client(
+        model=model,
+        data=client_data,
+        server_address="localhost:8080",
+        apply_differential_privacy=True,
+        epsilon=1.0,
+        delta=1e-5,
+        max_grad_norm=1.0
+    )
 
 Best Practices
 -------------
@@ -340,12 +282,12 @@ Best Practices
 3. **Pre-train on public data**: Initialize models with public data before fine-tuning with differential privacy on sensitive data
 4. **Simplify models**: Simpler models often require less privacy budget
 5. **Monitor training curves**: Watch for signs of excessive noise affecting convergence
-6. **Test different noise mechanisms**: Try both Gaussian and Laplace mechanisms to see which works better for your use case
+6. **Manually set noise_multiplier**: If the auto-calculated noise is too high, try manually setting a lower value
 7. **Tune the clipping threshold**: Find the optimal gradient clipping threshold for your specific problem
 
 Further Reading
 -------------
 
-* :doc:`/api/differential_privacy` - Complete API reference for differential privacy functions
+* :doc:`/api/privacy` - Complete API reference for differential privacy functions
 * :doc:`/examples/differential_privacy` - More examples of differential privacy techniques
 * `The Algorithmic Foundations of Differential Privacy <https://www.cis.upenn.edu/~aaroth/Papers/privacybook.pdf>`_ - Foundational paper by Dwork and Roth 

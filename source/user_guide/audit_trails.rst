@@ -2,7 +2,7 @@
 Audit Trails
 =============
 
-Audit trails provide a chronological record of all data operations and model activities, which is critical for compliance with privacy regulations and for ensuring accountability in machine learning systems. SecureML offers comprehensive audit trail capabilities to track all privacy-relevant operations throughout the ML lifecycle.
+Audit trails provide a chronological record of all data operations and model activities, which is critical for compliance with privacy regulations and for ensuring accountability in machine learning systems. SecureML offers audit trail capabilities to track all privacy-relevant operations throughout the ML lifecycle.
 
 Core Concepts
 ------------
@@ -18,25 +18,26 @@ Core Concepts
 Basic Usage
 ----------
 
-Enabling Audit Trails
+Creating an Audit Trail
 ^^^^^^^^^^^^^^^^^^^
 
-To enable audit trails for your SecureML application:
+To create an audit trail for your SecureML application:
 
 .. code-block:: python
 
-    from secureml.audit import AuditManager
+    from secureml.audit import AuditTrail
     
-    # Initialize the audit manager
-    audit_manager = AuditManager(
-        app_name='credit_risk_model',
-        log_level='INFO',  # Options: 'DEBUG', 'INFO', 'WARNING', 'ERROR'
-        storage_backend='file',  # Options: 'file', 'database', 'cloud'
-        storage_path='audit_logs/'
+    # Initialize an audit trail
+    audit = AuditTrail(
+        operation_name='credit_risk_model_training',
+        log_dir='audit_logs/',  # Optional: directory for storing logs
+        log_level=20,  # Optional: logging level (default: INFO)
+        context={'app_version': '1.0.0'},  # Optional: context to include in all logs
+        regulations=['GDPR', 'CCPA']  # Optional: regulations this operation should comply with
     )
     
-    # Enable audit trails
-    audit_manager.enable()
+    # The audit trail will be automatically initialized with a unique operation_id
+    # and start_time, which are included in all subsequent logs
 
 Logging Data Access Events
 ^^^^^^^^^^^^^^^^^^^^^^^
@@ -45,25 +46,33 @@ Track when sensitive data is accessed:
 
 .. code-block:: python
 
-    # Manually log a data access event
-    audit_manager.log_data_access(
+    # Log a data access event
+    audit.log_data_access(
         dataset_name='customer_financial_data',
-        user_id='analyst_123',
-        purpose='model_training',
-        access_type='read',
         columns_accessed=['income', 'credit_score', 'loan_history'],
         num_records=5000,
-        query="SELECT * FROM customer_data WHERE account_status = 'active'"
+        purpose='model_training',
+        user='analyst_123'  # Optional: user who performed the access
     )
-    
-    # Automatically log data access via context manager
-    with audit_manager.track_data_access(
-        dataset_name='customer_financial_data',
-        purpose='feature_engineering'
-    ):
-        # Any data operations here will be automatically logged
-        df = pd.read_csv('customer_data.csv')
-        features = engineer_features(df)
+
+Logging Data Transformations
+^^^^^^^^^^^^^^^^^^^^^
+
+Track data transformations:
+
+.. code-block:: python
+
+    # Log a data transformation event
+    audit.log_data_transformation(
+        transformation_type='anonymization',
+        input_data='raw_customer_data',
+        output_data='anonymized_customer_data',
+        parameters={
+            'method': 'k-anonymity',
+            'k': 5,
+            'quasi_identifiers': ['age', 'zipcode', 'gender']
+        }
+    )
 
 Logging Model Operations
 ^^^^^^^^^^^^^^^^^^^^^
@@ -73,298 +82,169 @@ Track model-related activities:
 .. code-block:: python
 
     # Log model training event
-    model_training_id = audit_manager.log_model_training(
-        model_name='credit_risk_classifier',
+    audit.log_model_training(
         model_type='random_forest',
-        training_dataset='customer_data_anonymized',
-        hyperparameters={'n_estimators': 100, 'max_depth': 10},
-        training_metrics={'accuracy': 0.92, 'auc': 0.88},
+        dataset_name='customer_data_anonymized',
+        parameters={'n_estimators': 100, 'max_depth': 10},
+        metrics={'accuracy': 0.92, 'auc': 0.88},
         privacy_parameters={'epsilon': 1.0, 'delta': 1e-5}
     )
     
-    # Log model prediction event
-    audit_manager.log_model_prediction(
-        model_name='credit_risk_classifier',
-        model_version='v1.2',
-        prediction_type='batch',
-        num_predictions=250,
-        user_id='service_account_risk_api',
-        purpose='customer_risk_assessment'
-    )
-    
-    # Log model export event
-    audit_manager.log_model_export(
-        model_name='credit_risk_classifier',
-        model_version='v1.2',
-        export_format='pickle',
-        destination='risk_api_server',
-        user_id='devops_123'
+    # Log model inference event
+    audit.log_model_inference(
+        model_id='credit_risk_classifier_v1',
+        input_data='customer_application_123',
+        output='high_risk',
+        confidence=0.85
     )
 
-Automatic Audit Integration
-^^^^^^^^^^^^^^^^^^^^^^^^^
+Logging Compliance Checks
+^^^^^^^^^^^^^^^^^^^^^
 
-Use automatic audit integration with SecureML components:
+Track compliance verification:
 
 .. code-block:: python
 
-    from secureml.anonymization import Anonymizer
-    from secureml.differential_privacy import DPTrainer
-    
-    # Anonymization with audit trails
-    anonymizer = Anonymizer(
-        quasi_identifiers=['age', 'zipcode', 'gender'],
-        sensitive_attributes=['income', 'disease'],
-        k=5,
-        audit_manager=audit_manager  # Pass the audit manager to enable automatic logging
+    # Log a compliance check
+    audit.log_compliance_check(
+        check_type='data_minimization',
+        regulation='GDPR',
+        result=True,  # True = passed, False = failed
+        details={
+            'columns_before': 25,
+            'columns_after': 10,
+            'columns_removed': ['unnecessary_field_1', 'unnecessary_field_2']
+        }
     )
-    
-    # Differential privacy with audit trails
-    dp_trainer = DPTrainer(
-        model=model,
-        epsilon=1.0,
-        delta=1e-5,
-        audit_manager=audit_manager  # Enable automatic logging
+
+Logging User Requests
+^^^^^^^^^^^^^^^^^^^^^
+
+Track GDPR/CCPA user requests:
+
+.. code-block:: python
+
+    # Log a user request (e.g., GDPR right to access)
+    audit.log_user_request(
+        request_type='data_access_request',
+        user_id='user_12345',
+        details={
+            'request_date': '2023-06-20',
+            'data_categories': ['personal_info', 'financial_data']
+        },
+        status='completed'
+    )
+
+Closing the Audit Trail
+^^^^^^^^^^^^^^^^^^^^^
+
+Properly close the audit trail when the operation is complete:
+
+.. code-block:: python
+
+    # Close the audit trail
+    audit.close(
+        status='completed',  # Or 'error', 'cancelled', etc.
+        details={
+            'execution_time': 125.7,
+            'output_location': 'models/credit_risk_v1.pkl'
+        }
     )
 
 Advanced Techniques
 ------------------
 
-Tamper-Proof Audit Logs
-^^^^^^^^^^^^^^^^^^^^^
-
-Ensure audit logs cannot be modified:
-
-.. code-block:: python
-
-    from secureml.audit import TamperProofAuditManager
-    
-    # Create a tamper-proof audit manager
-    tamper_proof_manager = TamperProofAuditManager(
-        app_name='healthcare_prediction',
-        hash_algorithm='sha256',  # Hashing algorithm for the chain
-        storage_backend='blockchain',  # Options: 'blockchain', 'signed_database', 'immutable_storage'
-        key_management='vault'  # Options: 'vault', 'kms', 'local'
-    )
-    
-    # Log an event with additional integrity verification
-    tamper_proof_manager.log_event(
-        event_type='data_processing',
-        description='PHI data anonymization',
-        data_assets=['patient_records.csv'],
-        verify_integrity=True
-    )
-    
-    # Verify the audit log integrity
-    is_valid = tamper_proof_manager.verify_log_integrity()
-    if not is_valid:
-        print("Warning: Audit logs may have been tampered with!")
-
-Compliance-Specific Audit Trails
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Configure audit trails for specific regulations:
-
-.. code-block:: python
-
-    from secureml.audit import ComplianceAuditManager
-    
-    # Create a GDPR-focused audit manager
-    gdpr_audit = ComplianceAuditManager(
-        regulation='gdpr',
-        data_controller='Example Healthcare Inc.',
-        data_protection_officer='jane.doe@example.com',
-        legal_basis_tracking=True,
-        consent_tracking=True,
-        right_to_access_support=True,
-        right_to_be_forgotten_support=True
-    )
-    
-    # Log a consent event
-    gdpr_audit.log_consent(
-        data_subject_id='patient_12345',
-        consent_given=True,
-        consent_timestamp='2023-04-15T14:30:00Z',
-        consent_purpose=['treatment', 'research'],
-        consent_expiry='2024-04-15T14:30:00Z',
-        evidence_reference='consent_form_12345.pdf'
-    )
-    
-    # Log a data subject request
-    gdpr_audit.log_data_subject_request(
-        request_type='access_request',  # Options: 'access_request', 'deletion_request', 'correction_request'
-        data_subject_id='patient_12345',
-        request_timestamp='2023-06-20T10:15:00Z',
-        request_status='completed',
-        request_completion_timestamp='2023-06-22T14:30:00Z',
-        operator_id='privacy_team_member_123'
-    )
-
-Querying and Analyzing Audit Logs
+Using the Audit Function Decorator
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Search and analyze audit data:
+Automatically audit function calls:
 
 .. code-block:: python
 
-    from secureml.audit import AuditLogAnalyzer
+    from secureml.audit import audit_function
     
-    # Initialize the analyzer
-    analyzer = AuditLogAnalyzer(audit_manager)
-    
-    # Search for specific events
-    data_access_events = analyzer.search(
-        event_type='data_access',
-        user_id='analyst_123',
-        time_range=('2023-01-01', '2023-06-30'),
-        dataset_name='customer_financial_data'
+    # Create a decorated function
+    @audit_function(
+        operation_name='data_preprocessing',
+        log_dir='audit_logs',
+        regulations=['GDPR']
     )
+    def process_sensitive_data(data, anonymize=True):
+        # Function implementation...
+        return processed_data
     
-    # Generate compliance reports
-    gdpr_report = analyzer.generate_compliance_report(
-        regulation='gdpr',
-        time_period='last_quarter',
-        report_format='pdf'
-    )
-    
-    # Identify unusual access patterns
-    anomalies = analyzer.detect_anomalies(
-        baseline_period=('2023-01-01', '2023-03-31'),
-        analysis_period=('2023-04-01', '2023-06-30'),
-        sensitivity=0.8
-    )
-    
-    # Save the analysis to file
-    analyzer.export_analysis('audit_analysis_q2_2023.html')
+    # When this function is called, the audit trail will automatically:
+    # 1. Log the function call with parameters
+    # 2. Log the return value or any exceptions
+    # 3. Close the audit trail
 
-Usage Analytics and Dashboards
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Retrieving Audit Logs
+^^^^^^^^^^^^^^^^^^^^^
 
-Generate insights from audit data:
+Retrieve and analyze audit logs:
 
 .. code-block:: python
 
-    from secureml.audit import AuditDashboard
+    from secureml.audit import get_audit_logs
     
-    # Create a dashboard for visualization
-    dashboard = AuditDashboard(audit_manager)
-    
-    # Add various metrics to track
-    dashboard.add_metric('data_access_by_user', timeframe='daily')
-    dashboard.add_metric('model_invocations', timeframe='hourly')
-    dashboard.add_metric('privacy_budget_consumption', timeframe='weekly')
-    dashboard.add_metric('data_subject_requests', timeframe='monthly')
-    
-    # Generate and publish the dashboard
-    dashboard.generate()
-    dashboard.publish('audit_dashboard.html')
-
-    # Set up alerts for specific conditions
-    dashboard.add_alert(
-        metric='data_access_by_user',
-        condition='count > 1000',
-        notification_method='email',
-        notification_recipient='security@example.com'
+    # Get logs for a specific operation
+    logs = get_audit_logs(
+        operation_id='12345-abcde-67890',  # Optional: specific operation ID
+        operation_name='credit_risk_model_training',  # Optional: operation name
+        start_time='2023-01-01T00:00:00',  # Optional: filter by start time
+        end_time='2023-06-30T23:59:59',  # Optional: filter by end time
+        log_dir='audit_logs'  # Optional: directory containing logs
     )
+    
+    # Analyze the logs
+    for log in logs:
+        print(f"Event: {log['event_type']} - Time: {log['timestamp']}")
 
-Integration with System Components
---------------------------------
+Integration with Reporting
+-------------------------
 
-Integrating Audit Trails with Data Pipelines
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Using the ReportGenerator
+^^^^^^^^^^^^^^^^^^^^^
 
-Track all data transformations:
+Generate HTML or PDF reports from audit logs:
 
 .. code-block:: python
 
-    from secureml.audit import DataPipelineAuditor
-    from secureml.data import DataPipeline
+    from secureml.reporting import ReportGenerator
     
-    # Create an auditor for data pipelines
-    pipeline_auditor = DataPipelineAuditor(audit_manager)
+    # Create a report generator
+    generator = ReportGenerator()
     
-    # Create a data pipeline with audit integration
-    pipeline = DataPipeline(
-        name='feature_engineering_pipeline',
-        auditor=pipeline_auditor
+    # Generate an audit report
+    report_path = generator.generate_audit_report(
+        logs=logs,  # Logs retrieved with get_audit_logs
+        output_file='audit_report.pdf',
+        title='Credit Risk Model Audit Report',
+        logo_path='company_logo.png',  # Optional
+        include_charts=True  # Optional: include visualizations
     )
     
-    # Add pipeline steps with automatic auditing
-    pipeline.add_step(
-        name='load_data',
-        function=load_customer_data,
-        audit_metadata={'data_source': 'customer_database', 'sensitivity': 'high'}
-    )
-    
-    pipeline.add_step(
-        name='anonymize_data',
-        function=anonymize_customer_data,
-        audit_metadata={'privacy_technique': 'k-anonymity', 'k_value': 5}
-    )
-    
-    # Execute the pipeline with full audit trail
-    pipeline.execute()
+    print(f"Audit report generated at: {report_path}")
 
-Integrating Audit Trails with Model Serving
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Integration with Compliance Checking
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Track model serving and predictions:
+Audit trails can be automatically created when performing compliance checks:
 
 .. code-block:: python
 
-    from secureml.audit import ModelServingAuditor
-    from secureml.serving import ModelServer
+    from secureml.compliance import ComplianceAuditor
     
-    # Create an auditor for model serving
-    serving_auditor = ModelServingAuditor(audit_manager)
-    
-    # Create a model server with audit integration
-    model_server = ModelServer(
-        model_path='models/credit_risk_classifier.pkl',
-        auditor=serving_auditor,
-        audit_predictions=True,  # Enable prediction auditing
-        audit_sample_rate=0.1,   # Audit 10% of predictions (for high-volume systems)
-        audit_data_retention=30  # Store audit data for 30 days
+    # Create a compliance auditor with audit integration
+    auditor = ComplianceAuditor(
+        regulation='GDPR',
+        log_dir='audit_logs'  # This enables automatic audit trail creation
     )
     
-    # Start the model server
-    model_server.start(port=8000)
-
-Retention and Archiving
----------------------
-
-Managing Audit Data Lifecycle:
-
-.. code-block:: python
-
-    from secureml.audit import AuditRetentionManager
-    
-    # Create a retention manager
-    retention_manager = AuditRetentionManager(audit_manager)
-    
-    # Set retention policies
-    retention_manager.set_retention_policy(
-        event_type='data_access',
-        retention_period=365,  # days
-        archive_after=90,      # days
-        anonymize_after=180    # days
-    )
-    
-    retention_manager.set_retention_policy(
-        event_type='model_training',
-        retention_period=730,  # 2 years
-        archive_after=365      # 1 year
-    )
-    
-    # Apply retention policies
-    retention_manager.apply_policies()
-    
-    # Archive old audit logs
-    retention_manager.archive_logs(
-        start_date='2022-01-01',
-        end_date='2022-12-31',
-        archive_format='encrypted_zip',
-        archive_location='s3://audit-archives/'
+    # The audit trails for all operations will be stored in the log directory
+    dataset_report = auditor.audit_dataset(
+        dataset=df,
+        dataset_name='patient_records'
     )
 
 Best Practices
@@ -376,13 +256,13 @@ Best Practices
 
 3. **Use proper granularity**: Balance between logging too much (performance impact) and too little (missing important events)
 
-4. **Secure audit logs**: Implement proper access controls and ensure logs cannot be tampered with
+4. **Secure audit logs**: Implement proper access controls for log files
 
 5. **Regular reviews**: Periodically review audit logs for anomalies or compliance issues
 
-6. **Retention policies**: Define clear retention policies that align with legal and regulatory requirements
+6. **Contextual information**: Include sufficient context in each log entry to understand the operation's purpose
 
-7. **Automation**: Automate the generation of compliance reports from audit data
+7. **Automation**: Use the audit_function decorator for critical operations
 
 8. **User attribution**: Always include user information when logging events to ensure accountability
 

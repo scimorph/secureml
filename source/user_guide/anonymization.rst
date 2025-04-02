@@ -10,9 +10,9 @@ Core Concepts
 SecureML implements multiple anonymization techniques:
 
 * **K-anonymity**: Ensures that each record is indistinguishable from at least k-1 other records
-* **L-diversity**: Extends k-anonymity by requiring sensitive attributes to have diverse values
-* **T-closeness**: Further extends privacy by ensuring the distribution of sensitive attributes is close to the overall distribution
-* **Differential Privacy**: Adds statistical noise to data to provide mathematical privacy guarantees
+* **Pseudonymization**: Replaces identifying data with artificial identifiers
+* **Data Masking**: Hides specific parts of data while preserving its format
+* **Generalization**: Replaces specific values with broader categories
 
 Basic Usage
 ----------
@@ -26,111 +26,30 @@ The simplest way to anonymize a dataset is using the ``anonymize`` function:
     # Anonymize a pandas DataFrame
     anonymized_df = anonymize(
         df,
-        quasi_identifiers=['age', 'zipcode', 'gender'],
-        sensitive_attributes=['disease', 'income'],
+        method="k-anonymity",  # Options: 'k-anonymity', 'pseudonymization', 'data-masking', 'generalization'
         k=5,  # k-anonymity parameter
-        l=3,  # l-diversity parameter
-        t=0.2  # t-closeness parameter
+        sensitive_columns=['disease', 'income']  # List of columns containing sensitive information
     )
 
-For more fine-grained control, you can use the ``Anonymizer`` class:
+If no sensitive columns are specified, the function will attempt to automatically identify them:
 
 .. code-block:: python
 
-    from secureml.anonymization import Anonymizer
-    
-    anonymizer = Anonymizer(
-        quasi_identifiers=['age', 'zipcode', 'gender'],
-        sensitive_attributes=['disease', 'income'],
-        k=5,
-        l=3,
-        t=0.2
+    # Automatic identification of sensitive columns
+    anonymized_df = anonymize(
+        df,
+        method="k-anonymity",
+        k=5
+        # sensitive_columns will be automatically identified
     )
-    
-    # Fit the anonymizer to learn data distributions
-    anonymizer.fit(df)
-    
-    # Transform the data
-    anonymized_df = anonymizer.transform(df)
-    
-    # Or do both in one step
-    anonymized_df = anonymizer.fit_transform(df)
-    
-    # Save the anonymizer for future use
-    anonymizer.save('my_anonymizer.pkl')
-    
-    # Load a saved anonymizer
-    from secureml.anonymization import load_anonymizer
-    loaded_anonymizer = load_anonymizer('my_anonymizer.pkl')
 
 Advanced Techniques
 ------------------
 
-Attribute Generalization
-^^^^^^^^^^^^^^^^^^^^^^^
+K-Anonymity
+^^^^^^^^^^^^^
 
-For categorical and numerical attributes, you can specify custom generalization hierarchies:
-
-.. code-block:: python
-
-    from secureml.anonymization import Anonymizer, NumericGeneralization, CategoricalGeneralization
-    
-    # Define generalization for age (numeric)
-    age_gen = NumericGeneralization(
-        bins=[0, 18, 30, 50, 65, 100],
-        labels=['0-18', '19-30', '31-50', '51-65', '65+']
-    )
-    
-    # Define generalization for occupation (categorical)
-    occupation_gen = CategoricalGeneralization({
-        'doctor': 'healthcare',
-        'nurse': 'healthcare',
-        'teacher': 'education',
-        'professor': 'education',
-        # ... more mappings
-    })
-    
-    anonymizer = Anonymizer(
-        quasi_identifiers=['age', 'zipcode', 'occupation'],
-        sensitive_attributes=['disease'],
-        generalizations={
-            'age': age_gen,
-            'occupation': occupation_gen
-        }
-    )
-
-Column Suppression
-^^^^^^^^^^^^^^^^
-
-You can completely suppress columns that are too identifying:
-
-.. code-block:: python
-
-    anonymized_df = anonymize(
-        df,
-        quasi_identifiers=['age', 'zipcode', 'gender'],
-        sensitive_attributes=['disease', 'income'],
-        suppressed_attributes=['id', 'name', 'ssn', 'exact_address']
-    )
-
-Record Suppression
-^^^^^^^^^^^^^^^^
-
-In some cases, certain records may be statistical outliers that are impossible to anonymize without excessive information loss. You can configure how these records are handled:
-
-.. code-block:: python
-
-    anonymizer = Anonymizer(
-        quasi_identifiers=['age', 'zipcode', 'gender'],
-        sensitive_attributes=['disease'],
-        outlier_handling='suppress',  # Options: 'suppress', 'separate_group', 'force_generalize'
-        max_suppression_rate=0.05  # Maximum percentage of records that can be suppressed
-    )
-
-Differential Privacy Integration
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-You can combine traditional anonymization with differential privacy for stronger guarantees:
+K-anonymity ensures that each combination of quasi-identifier values appears at least k times, making it difficult to re-identify individuals:
 
 .. code-block:: python
 
@@ -138,42 +57,132 @@ You can combine traditional anonymization with differential privacy for stronger
     
     anonymized_df = anonymize(
         df,
-        quasi_identifiers=['age', 'zipcode', 'gender'],
-        sensitive_attributes=['disease', 'income'],
-        apply_differential_privacy=True,
-        epsilon=1.0,  # Privacy budget
-        delta=1e-5    # Probability of privacy breach
+        method="k-anonymity",
+        k=5,
+        sensitive_columns=['disease', 'income'],
+        quasi_identifier_columns=['age', 'zipcode', 'gender'],  # Columns that could be used for re-identification
+        categorical_generalization_levels={  # Custom generalization hierarchies
+            'gender': {'Male': 'M', 'Female': 'F', 'Other': 'O'}
+        },
+        numeric_generalization_strategy="equal_width",  # Options: "equal_width", "equal_frequency", "mdlp"
+        max_generalization_iterations=5,  # Maximum number of generalization iterations
+        suppression_threshold=0.05  # Maximum fraction of records that can be suppressed
     )
 
-Utility Metrics
--------------
+Pseudonymization
+^^^^^^^^^^^^^^
 
-SecureML provides tools to measure the utility preservation of anonymized data:
+Pseudonymization replaces identifying data with artificial identifiers while preserving data characteristics:
 
 .. code-block:: python
 
-    from secureml.anonymization.metrics import information_loss, query_error
-    
-    # Measure information loss
-    loss = information_loss(original_df, anonymized_df)
-    print(f"Information loss: {loss:.2f}")
-    
-    # Measure query error for specific analytics
-    error = query_error(
-        original_df, 
-        anonymized_df,
-        query="SELECT AVG(income) FROM df GROUP BY gender"
+    anonymized_df = anonymize(
+        df,
+        method="pseudonymization",
+        sensitive_columns=['email', 'phone', 'name'],
+        strategy="hash",  # Options: "hash", "fpe", "deterministic", "custom"
+        preserve_format=True,  # Preserve the format of original values
+        salt="your-salt-string"  # Salt for deterministic pseudonymization
     )
-    print(f"Query error: {error:.2f}")
+
+    # Format-preserving encryption (FPE)
+    anonymized_df = anonymize(
+        df,
+        method="pseudonymization",
+        sensitive_columns=['credit_card', 'ssn'],
+        strategy="fpe",
+        preserve_format=True
+    )
+
+    # Custom mapping
+    anonymized_df = anonymize(
+        df,
+        method="pseudonymization",
+        sensitive_columns=['city'],
+        strategy="custom",
+        mapping={
+            'New York': 'City A',
+            'Los Angeles': 'City B',
+            'Chicago': 'City C'
+        }
+    )
+
+Data Masking
+^^^^^^^^^^
+
+Data masking hides specific parts of data while preserving its format:
+
+.. code-block:: python
+
+    anonymized_df = anonymize(
+        df,
+        method="data-masking",
+        sensitive_columns=['email', 'phone', 'ssn'],
+        default_strategy="character",  # Default masking strategy
+        preserve_format=True,  # Preserve the format of original values
+        masking_rules={  # Column-specific masking rules
+            'email': {"strategy": "regex", "pattern": r"(.)(.*)(@.*)", "replacement": r"\1***\3"},
+            'ssn': {"strategy": "character", "show_first": 0, "show_last": 4, "mask_char": "*"},
+            'phone': {"strategy": "fixed", "format": "XXX-XXX-XXXX", "mask_char": "X"}
+        }
+    )
+
+    # Random masking with statistical preservation
+    anonymized_df = anonymize(
+        df,
+        method="data-masking",
+        sensitive_columns=['income', 'age'],
+        default_strategy="random",
+        preserve_statistics=True  # Preserve statistical properties like mean and range
+    )
+
+Generalization
+^^^^^^^^^^^^
+
+Generalization reduces data granularity to protect privacy while maintaining analytical utility:
+
+.. code-block:: python
+
+    anonymized_df = anonymize(
+        df,
+        method="generalization",
+        sensitive_columns=['age', 'zipcode', 'income', 'date_of_birth'],
+        default_method="range",  # Default generalization method
+        generalization_rules={  # Column-specific generalization rules
+            'age': {"method": "range", "range_size": 10},
+            'zipcode': {"method": "topk", "k": 5, "other_value": "Other"},
+            'income': {"method": "binning", "num_bins": 5, "strategy": "equal_frequency"},
+            'date_of_birth': {"method": "date", "level": "year"}
+        }
+    )
+
+Automatic Sensitive Column Detection
+---------------------------------
+
+SecureML can automatically identify columns that likely contain sensitive information:
+
+.. code-block:: python
+
+    from secureml.anonymization import anonymize
+    
+    # Automatically detect and anonymize sensitive columns
+    anonymized_df = anonymize(
+        df,
+        method="k-anonymity",
+        k=5
+        # No need to specify sensitive_columns
+    )
+
+The automatic detection looks for patterns in column names and contents that suggest sensitive data according to privacy frameworks like GDPR, CCPA, and HIPAA.
 
 Best Practices
 -------------
 
-1. **Start with minimal quasi-identifiers**: Only include attributes that are truly necessary for identification
-2. **Balance privacy and utility**: Higher k, l, and t values provide more privacy but reduce utility
-3. **Test with different parameters**: Experiment to find the optimal balance for your specific use case
-4. **Verify anonymization**: Use SecureML's tools to verify that your data meets the desired privacy criteria
-5. **Combine techniques**: For sensitive applications, use multiple techniques like k-anonymity and differential privacy together
+1. **Start with minimal sensitive columns**: Only include attributes that are truly necessary to protect
+2. **Balance privacy and utility**: Higher k values provide more privacy but reduce utility
+3. **Test with different methods**: Experiment to find the optimal method for your specific use case
+4. **Combine techniques**: For sensitive applications, consider applying multiple techniques sequentially
+5. **Verify anonymization**: Test whether the anonymized data still meets the privacy requirements you need
 
 Further Reading
 -------------

@@ -13,7 +13,7 @@ Anonymizing a dataset to comply with privacy regulations:
 
     import pandas as pd
     from secureml import anonymize
-    
+
     # Load your dataset
     data = pd.DataFrame({
         "name": ["John Doe", "Jane Smith", "Bob Johnson"],
