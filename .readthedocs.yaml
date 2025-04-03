@@ -10,6 +10,8 @@ build:
       - pip install poetry
       # Don't use virtualenvs with poetry
       - poetry config virtualenvs.create false
+      # Explicitly include the dev group
+      - poetry install --with dev
 
 # Build documentation in the source/ directory with Sphinx
 sphinx:
