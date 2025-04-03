@@ -25,6 +25,7 @@ jinja2 = "^3.1.4"
 matplotlib = "^3.7.1"
 click = "^8.1.8"
 pyarrow = "^19.0.1"
+sphinx-rtd-theme = "^1.3.0"
 weasyprint = {version = "^64.1", optional = true}
 hvac = {version = "^1.1.1", optional = true}
 
@@ -39,7 +40,6 @@ black = "^24.3.0"
 isort = "^5.12.0"
 mypy = "^1.5.0"
 sphinx = "^7.1.0"
-sphinx-rtd-theme = "^1.3.0"
 
 [tool.poetry.scripts]
 secureml = "secureml.cli:cli"
