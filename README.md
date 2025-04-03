@@ -10,6 +10,10 @@
   <img src="https://img.shields.io/pypi/pyversions/secureml.svg" alt="Python Versions">
 </p>
 
+<h3 align="center">
+  <a href="https://secureml.readthedocs.io/en/latest/index.html">Documentation</a>
+</h3>
+
 SecureML is an open-source Python library that integrates with popular machine learning frameworks like TensorFlow and PyTorch. It provides developers with easy-to-use utilities to ensure that AI agents handle sensitive data in compliance with data protection regulations.
 
 ## Key Features
