@@ -783,301 +783,159 @@ def _apply_pseudonymization(
 def _apply_data_masking(
     data: pd.DataFrame,
     sensitive_columns: List[str],
-    masking_rules: Optional[Dict[str, Dict[str, Any]]] = None,
-    default_strategy: str = "character",
-    preserve_format: bool = True,
+    default_strategy: str = "partial",
     preserve_statistics: bool = False,
     **kwargs: Any,
 ) -> pd.DataFrame:
     """
-    Apply data masking to the dataset with advanced configuration options.
-    
-    This implementation provides multiple masking strategies customized for different
-    data types and use cases. It supports format preservation, statistical property
-    preservation, and column-specific masking rules.
+    Apply data masking to sensitive columns.
     
     Args:
-        data: The dataset to anonymize
-        sensitive_columns: Columns containing sensitive information
-        masking_rules: Dictionary mapping column names to masking configurations.
-            Format: {column_name: {strategy: str, **strategy_params}}
-        default_strategy: Default masking strategy when not specified in masking_rules
-            Options: "character", "fixed", "regex", "random", "redact", "nullify"
-        preserve_format: Whether to preserve the general format of the original values
-        preserve_statistics: For numeric columns, whether to preserve statistical 
-            properties like mean and range
-        **kwargs: Additional parameters for specific strategies
-            
+        data: DataFrame to anonymize
+        sensitive_columns: Columns to mask
+        default_strategy: Default masking strategy ("partial", "complete", "random")
+        preserve_statistics: Whether to preserve statistical properties
+        **kwargs: Additional arguments
+    
     Returns:
-        The masked dataset
-        
-    Example:
-        masking_rules = {
-            "email": {"strategy": "regex", "pattern": r"(.)(.*)(@.*)"},
-            "credit_card": {"strategy": "character", "show_first": 4, "show_last": 4},
-            "phone": {"strategy": "fixed", "mask_char": "X", "format": "XXX-XXX-XXXX"},
-            "income": {"strategy": "random", "preserve_statistics": True}
-        }
+        DataFrame with masked data
     """
-    import re
-    import random
-    import numpy as np
-    from datetime import datetime, date
+    result = data.copy()
     
-    # Make a copy of the dataset
-    masked_data = data.copy()
-    
-    # Default masking rules if none provided
-    if masking_rules is None:
-        masking_rules = {}
-
-    # Define default format-preserving rules for known sensitive columns
-    default_format_preserving_rules = {
-        'email': {"strategy": "regex", "pattern": r"(.)(.*)(@.*)", "replacement": r"\1***\3"},
-        'ssn': {"strategy": "regex", "pattern": r"(\d{3})-(\d{2})-(\d{4})", "replacement": r"***-\2-****"},
-        'zip_code': {"strategy": "character", "show_first": 2, "show_last": 0},
-    }
-    
-    # Helper functions for different masking strategies
-    def _character_mask(
-        value: Any,
-        show_first: int = 0,
-        show_last: int = 0,
-        mask_char: str = "*",
-    ) -> str:
-        """Mask characters except for specified first/last characters."""
-        if pd.isna(value):
-            return value
-            
-        value_str = str(value)
-        if len(value_str) <= show_first + show_last:
-            return value_str
-            
-        masked = (
-            value_str[:show_first] + 
-            mask_char * (len(value_str) - show_first - show_last) + 
-            (value_str[-show_last:] if show_last > 0 else "")
-        )
-        return masked
-    
-    def _fixed_mask(
-        value,
-        format: str = "XXXX-XXXX",
-        mask_char: str = "X",
-        preserve_special_chars=True
-    ) -> str:
-        """Apply a fixed mask format to the value."""
-        if preserve_special_chars:
-            # Create a mask based purely on the format string
-            result = ""
-            for char_in_format in format:
-                if char_in_format == mask_char:
-                    # If the format character is the mask character, append the mask character
-                    result += mask_char
-                else:
-                    # Otherwise, keep the character from the format string (e.g., '-')
-                    result += char_in_format
-            return result
-        else:
-            # If not preserving special chars, just return the literal format string
-            # (This might need refinement later, but fixes the immediate issue)
-            return format
-    
-    def _regex_mask(
-        value: Any,
-        pattern: str,
-        replacement: str,
-    ) -> str:
-        """Apply regex-based masking."""
-        if pd.isna(value):
-            return value
-            
-        value_str = str(value)
-        return re.sub(pattern, replacement, value_str)
-    
-    def _random_mask(
-        value: Any,
-        char_set: str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
-        preserve_length: bool = True,
-        preserve_type: bool = True,
-        seed: Optional[int] = None,
-    ) -> Any:
-        """Replace with random values while preserving characteristics."""
-        if pd.isna(value):
-            return value
-            
-        # Set seed for deterministic masking within a column
-        if seed is not None:
-            # Use both seed and hash of value for deterministic randomization
-            value_hash = hash(str(value))
-            random.seed(seed + value_hash)
-        
-        # Handle different types
-        if isinstance(value, (int, float)):
-            if preserve_statistics and not preserve_type:
-                # Return a value that preserves column statistics (handled at column level)
-                return value
-            
-            if preserve_type:
-                # Generate a random number of similar magnitude
-                if isinstance(value, int):
-                    magnitude = len(str(abs(value)))
-                    return random.randint(10**(magnitude-1), 10**magnitude - 1) * (1 if value >= 0 else -1)
-                else:  # float
-                    magnitude = len(str(int(abs(value))))
-                    base = random.randint(10**(magnitude-1), 10**magnitude - 1)
-                    decimal = random.random()
-                    return (base + decimal) * (1 if value >= 0 else -1)
-        
-        elif isinstance(value, (datetime, date)):
-            if preserve_type:
-                # Generate a random date/datetime of similar period
-                if isinstance(value, datetime):
-                    year = random.randint(value.year - 5, value.year + 5)
-                    month = random.randint(1, 12)
-                    day = random.randint(1, 28)  # Safely within any month
-                    hour = random.randint(0, 23)
-                    minute = random.randint(0, 59)
-                    second = random.randint(0, 59)
-                    return datetime(year, month, day, hour, minute, second)
-                else:  # date
-                    year = random.randint(value.year - 5, value.year + 5)
-                    month = random.randint(1, 12)
-                    day = random.randint(1, 28)
-                    return date(year, month, day)
-        
-        # Default string handling
-        value_str = str(value)
-        if preserve_length:
-            # Replace each character with a random one from the char set
-            result = ""
-            for c in value_str:
-                if c.isalpha():
-                    if c.isupper():
-                        replacement = random.choice([char for char in char_set if char.isupper()])
-                    else:
-                        replacement = random.choice([char for char in char_set if char.islower()])
-                elif c.isdigit():
-                    replacement = random.choice([char for char in char_set if char.isdigit()])
-                else:
-                    # Preserve special characters
-                    replacement = c
-                result += replacement
-            return result
-        else:
-            # Generate a completely new random string
-            length = random.randint(4, 12)  # Randomize length too
-            return ''.join(random.choice(char_set) for _ in range(length))
-    
-    def _redact_value(value: Any, redaction_text: str = "[REDACTED]") -> str:
-        """Complete redaction of the value with a fixed text."""
-        if pd.isna(value):
-            return value
-        return redaction_text
-    
-    def _nullify_value(value: Any) -> None:
-        """Replace the value with NULL/None."""
-        return None
-    
-    # Process each sensitive column
-    for col in sensitive_columns:
-        if col not in masked_data.columns:
+    for column in sensitive_columns:
+        if column not in result.columns:
             continue
             
-        # Determine the masking configuration for this column
-        if preserve_format:
-            # Use user-provided rule if available, else default format-preserving rule, else default strategy
-            col_config = masking_rules.get(col, default_format_preserving_rules.get(col.lower(), {"strategy": default_strategy}))
-        else:
-            col_config = masking_rules.get(col, {"strategy": default_strategy})
-
-        strategy = col_config.get("strategy", default_strategy)
+        # Get column data type and strategy
+        dtype = result[column].dtype
+        strategy = kwargs.get(f"{column}_strategy", default_strategy)
         
-        # Detect column data type for type-specific handling
-        col_dtype = masked_data[col].dtype
-        is_numeric = pd.api.types.is_numeric_dtype(col_dtype)
-        is_datetime = pd.api.types.is_datetime64_dtype(col_dtype)
+        # Handle different data types
+        if pd.api.types.is_string_dtype(dtype):
+            # Apply string masking based on strategy
+            if strategy == "partial":
+                result[column] = result[column].apply(lambda x: _mask_string(x) if isinstance(x, str) else x)
+            elif strategy == "complete":
+                result[column] = result[column].apply(lambda x: "****" if isinstance(x, str) else x)
+            elif strategy == "random":
+                result[column] = result[column].apply(lambda x: _random_mask_string(x) if isinstance(x, str) else x)
         
-        # Apply masking based on strategy
-        if strategy == "character":
-            show_first = col_config.get("show_first", 2)
-            show_last = col_config.get("show_last", 2)
-            mask_char = col_config.get("mask_char", "*")
-            
-            masked_data[col] = masked_data[col].apply(
-                lambda x: _character_mask(x, show_first, show_last, mask_char)
-                if pd.notna(x) else x
-            )
-            
-        elif strategy == "fixed":
-            format_str = col_config.get("format", "XXXX-XXXX")
-            mask_char = col_config.get("mask_char", "X")
-            preserve_special = col_config.get("preserve_special_chars", True)
-            
-            masked_data[col] = masked_data[col].apply(
-                lambda x: _fixed_mask(x, format_str, mask_char, preserve_special)
-                if pd.notna(x) else x
-            )
-            
-        elif strategy == "regex":
-            pattern = col_config.get("pattern", r"(.)(.*)(@.*)")
-            replacement = col_config.get("replacement", r"\1***\3")
-            
-            masked_data[col] = masked_data[col].apply(
-                lambda x: _regex_mask(x, pattern, replacement)
-                if pd.notna(x) else x
-            )
-            
-        elif strategy == "random":
-            char_set = col_config.get("char_set", (
-                "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-            ))
-            preserve_length = col_config.get("preserve_length", True)
-            preserve_type = col_config.get("preserve_type", True)
-            seed = col_config.get("seed", 42)  # Fixed seed for deterministic results
-            
-            # Special handling for numeric columns with preserve_statistics
-            if is_numeric and col_config.get("preserve_statistics", preserve_statistics):
-                col_mean = masked_data[col].mean()
-                col_std = masked_data[col].std()
-                col_min = masked_data[col].min()
-                col_max = masked_data[col].max()
-                
-                # Generate random values with same statistical properties
-                n_values = len(masked_data)
-                if pd.api.types.is_integer_dtype(col_dtype):
-                    random_values = np.random.normal(col_mean, col_std, n_values)
-                    random_values = np.clip(random_values, col_min, col_max)
-                    random_values = np.round(random_values).astype(int)
+        elif pd.api.types.is_numeric_dtype(dtype):
+            # Apply numeric masking based on strategy
+            if strategy == "partial":
+                # Mask last 40% of digits
+                result[column] = result[column].apply(_mask_numeric_partial)
+            elif strategy == "complete":
+                # Replace with random values in similar range
+                mean = result[column].mean()
+                std = result[column].std()
+                if preserve_statistics:
+                    # Generate random values that preserve mean and std
+                    result[column] = np.random.normal(mean, std, len(result))
                 else:
-                    random_values = np.random.normal(col_mean, col_std, n_values)
-                    random_values = np.clip(random_values, col_min, col_max)
+                    # Simple random values in range
+                    min_val = result[column].min()
+                    max_val = result[column].max()
+                    result[column] = np.random.uniform(min_val, max_val, len(result))
+            elif strategy == "random":
+                # Apply noise to original values
+                noise_factor = kwargs.get("noise_factor", 0.2)
+                mean = 0
+                std = result[column].std() * noise_factor
+                noise = np.random.normal(mean, std, len(result))
                 
-                masked_data[col] = random_values
-            else:
-                masked_data[col] = masked_data[col].apply(
-                    lambda x: _random_mask(
-                        x, char_set, preserve_length, preserve_type, seed
-                    )
-                    if pd.notna(x) else x
-                )
+                if preserve_statistics:
+                    # Ensure noise doesn't change the mean
+                    noise = noise - noise.mean()
+                    
+                result[column] = result[column] + noise
                 
-        elif strategy == "redact":
-            redaction_text = col_config.get("redaction_text", "[REDACTED]")
-            masked_data[col] = masked_data[col].apply(
-                lambda x: _redact_value(x, redaction_text)
-                if pd.notna(x) else x
-            )
-            
-        elif strategy == "nullify":
-            masked_data[col] = masked_data[col].map(
-                lambda x: _nullify_value(x) if pd.notna(x) else x
-            )
-            
+    return result
+
+def _mask_numeric_partial(value):
+    """Mask the least significant digits of a numeric value."""
+    if pd.isna(value):
+        return value
+        
+    # Convert to string to manipulate digits
+    str_val = str(value)
+    if '.' in str_val:
+        integer_part, decimal_part = str_val.split('.')
+    else:
+        integer_part, decimal_part = str_val, ""
+    
+    # Determine how many digits to mask (40% of total)
+    total_len = len(integer_part) + len(decimal_part)
+    mask_len = max(1, int(total_len * 0.4))
+    
+    # Mask from right to left
+    if len(decimal_part) > 0:
+        # If there's a decimal part, mask it first
+        if mask_len <= len(decimal_part):
+            new_decimal = decimal_part[:-mask_len] + '*' * mask_len
+            result = f"{integer_part}.{new_decimal}"
         else:
-            raise ValueError(f"Unsupported masking strategy: {strategy}")
+            # Mask entire decimal part and some of integer part
+            remaining = mask_len - len(decimal_part)
+            new_integer = integer_part[:-remaining] + '*' * remaining
+            result = f"{new_integer}.{'*' * len(decimal_part)}"
+    else:
+        # Mask right side of integer
+        result = integer_part[:-mask_len] + '*' * mask_len
+        
+    # Convert back to numeric (will be the original with some precision loss)
+    # For masked digits, use random values
+    result = result.replace('*', '0')  # Replace with zeros for conversion
+    return float(result) + np.random.uniform(0, 10**(mask_len-1))
+
+def _mask_string(text):
+    """Mask part of a string, preserving format."""
+    if not isinstance(text, str) or not text:
+        return text
+        
+    # Handle email addresses specially
+    if '@' in text and '.' in text.split('@')[1]:
+        parts = text.split('@')
+        username = parts[0]
+        domain = parts[1]
+        
+        # Mask username except first 2 chars
+        if len(username) > 2:
+            username = username[:2] + '*' * (len(username) - 2)
+        
+        # Mask domain except TLD
+        domain_parts = domain.split('.')
+        tld = domain_parts[-1]
+        domain_name = '.'.join(domain_parts[:-1])
+        
+        if len(domain_name) > 2:
+            domain_name = domain_name[:2] + '*' * (len(domain_name) - 2)
             
-    return masked_data
+        return f"{username}@{domain_name}.{tld}"
+    
+    # For normal strings, mask middle part
+    if len(text) <= 4:
+        return '*' * len(text)
+    else:
+        visible_chars = max(2, len(text) // 4)
+        return text[:visible_chars] + '*' * (len(text) - 2*visible_chars) + text[-visible_chars:]
+
+def _random_mask_string(text):
+    """Replace a string with a random string of similar format."""
+    if not isinstance(text, str) or not text:
+        return text
+        
+    # Generate a random string of the same length preserving special characters
+    result = ""
+    for char in text:
+        if char.isalpha():
+            result += random.choice(string.ascii_letters)
+        elif char.isdigit():
+            result += random.choice(string.digits)
+        else:
+            result += char
+            
+    return result
 
 
 def _apply_generalization(
