@@ -49,7 +49,7 @@ jobs:
     
     - name: Install PyTorch CPU
       run: |
-        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+        pip install torch==2.0.1+cpu torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
     - name: Install dependencies
       run: |
