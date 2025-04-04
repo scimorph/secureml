@@ -193,19 +193,21 @@ class MockAnonymizationModule:
                     first_zip_prefix = data["zip_code"].iloc[0][:2] if len(data) > 0 else ""
                     
                     def apply_zip_mask(val):
-                        if pd.isna(val) or not isinstance(val, str):
+                        if pd.isna(val):
                             return val
-                        mask_length = len(str(val)) - show_first
+                        val_str = str(val)  # Always convert to string
+                        mask_length = len(val_str) - show_first
                         return first_zip_prefix + mask_char * mask_length
                     
                     result[col] = result[col].apply(apply_zip_mask)
                 else:
                     # Normal character masking for other columns
                     def apply_char_mask(val):
-                        if pd.isna(val) or not isinstance(val, str):
+                        if pd.isna(val):
                             return val
-                        if len(str(val)) <= show_first + show_last:
-                            return val
+                        val_str = str(val)  # Convert all types to string
+                        if len(val_str) <= show_first + show_last:
+                            return val_str
                         
                         first_part = str(val)[:show_first]
                         last_part = str(val)[-show_last:] if show_last > 0 else ""
@@ -228,7 +230,7 @@ class MockAnonymizationModule:
                 def apply_regex_mask(val):
                     if pd.isna(val) or not isinstance(val, str):
                         return val
-                    return re.sub(pattern, replacement, str(val))
+                    return re.sub(pattern, replacement, str(val))  # Convert to string
                 
                 result[col] = data[col].apply(apply_regex_mask)
                 
@@ -275,10 +277,11 @@ class MockAnonymizationModule:
             else:
                 # Default to basic character masking if strategy not recognized
                 def basic_mask(val):
-                    if pd.isna(val) or not isinstance(val, str):
+                    if pd.isna(val):
                         return val
-                    if len(str(val)) <= 2:
-                        return val
+                    val_str = str(val)  # Convert all types to string
+                    if len(val_str) <= 2:
+                        return val_str
                     return str(val)[0] + "*" * (len(str(val)) - 2) + str(val)[-1]
                 
                 result[col] = data[col].apply(basic_mask)
