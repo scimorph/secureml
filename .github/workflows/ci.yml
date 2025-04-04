@@ -47,13 +47,13 @@ jobs:
         path: .venv
         key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
     
-    - name: Install PyTorch CPU
-      run: |
-        pip install torch==2.0.1+cpu torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-
     - name: Install dependencies
       run: |
         poetry install --with dev
+        
+    - name: Install PyTorch CPU (after poetry)
+      run: |
+        poetry run pip install torch==2.0.1+cpu torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
     - name: Run tests
       run: |
