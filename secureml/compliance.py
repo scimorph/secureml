@@ -24,6 +24,7 @@ def get_nlp_model(model_name: str = "en_core_web_sm") -> Language:
     Load and return a SpaCy NLP model.
     
     This function caches the model to avoid reloading it multiple times.
+    If the model is not installed, it will attempt to download and install it.
     
     Args:
         model_name: Name of the SpaCy model to load
@@ -32,7 +33,7 @@ def get_nlp_model(model_name: str = "en_core_web_sm") -> Language:
         Loaded SpaCy language model
         
     Raises:
-        ImportError: If the specified model is not installed
+        ImportError: If the specified model cannot be installed or loaded
     """
     global _NLP_MODEL
     
@@ -40,10 +41,24 @@ def get_nlp_model(model_name: str = "en_core_web_sm") -> Language:
         try:
             _NLP_MODEL = spacy.load(model_name)
         except OSError:
-            raise ImportError(
-                f"SpaCy model '{model_name}' not found. "
-                f"Please install it with: python -m spacy download {model_name}"
-            )
+            # Model not found, attempt to install it
+            print(f"SpaCy model '{model_name}' not found. Attempting to download and install...")
+            try:
+                import subprocess
+                import sys
+                
+                # Run the spacy download command
+                subprocess.check_call([sys.executable, "-m", "spacy", "download", model_name])
+                
+                # Try loading the model again
+                _NLP_MODEL = spacy.load(model_name)
+                print(f"Successfully installed and loaded model '{model_name}'.")
+            except Exception as e:
+                raise ImportError(
+                    f"Failed to automatically install SpaCy model '{model_name}'. "
+                    f"Error: {str(e)}. "
+                    f"Please install it manually with: python -m spacy download {model_name}"
+                )
     
     return _NLP_MODEL
 
