@@ -134,10 +134,21 @@ print("\n" + "="*50 + "\n")
 
 # Example 5: Generate PDF Report
 print("Example 5: Generate PDF Report")
-pdf_path = auditor.generate_pdf(
-    audit_result=pipeline_report,
-    output_file="compliance_report.pdf",
-    title="Patient Records Pipeline Compliance Audit",
-    logo_path="hospital_logo.png"  # Optional
-)
-print(f"\nPDF report generated at: {pdf_path}") 
+try:
+    pdf_path = auditor.generate_pdf(
+        audit_result=pipeline_report,
+        output_file="compliance_report.pdf",
+        title="Patient Records Pipeline Compliance Audit",
+        logo_path="hospital_logo.png"  # Optional
+    )
+    print(f"\nPDF report generated at: {pdf_path}")
+except ImportError as e:
+    print("\nCouldn't generate PDF report: WeasyPrint dependency missing.")
+    print("To use PDF generation, install WeasyPrint with 'pip install secureml[pdf]'")
+    print("On Windows, you'll also need to install GTK libraries. See:")
+    print("https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#windows")
+except OSError as e:
+    print(f"\nCouldn't generate PDF report: Required system libraries missing.")
+    print("On Windows, WeasyPrint requires GTK libraries. See installation guide:")
+    print("https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#windows")
+    print(f"Error details: {str(e)}") 

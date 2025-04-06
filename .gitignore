@@ -50,3 +50,6 @@ Thumbs.db
 # Documentation files
 .bat
 Makefile
+
+# Audit logs
+audit_logs/

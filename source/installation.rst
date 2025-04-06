@@ -36,11 +36,13 @@ SecureML offers several optional components that can be installed based on your 
 PDF Report Generation
 ^^^^^^^^^^^^^^^^^^^^
 
-For generating PDF reports for compliance and audit trails:
+For generating PDF reports for compliance and audit trails with WeasyPrint:
 
 .. code-block:: bash
 
     pip install secureml[pdf]
+
+On Windows, WeasyPrint requires GTK libraries. See `installation guide <https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#windows>`_.
 
 HashiCorp Vault Integration
 ^^^^^^^^^^^^^^^^^^^^^^^^^^

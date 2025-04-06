@@ -268,6 +268,8 @@ PDF reports are ideal for formal documentation and sharing with stakeholders:
 
     # Install WeasyPrint for PDF support
     # pip install secureml[pdf]
+    # On Windows, you'll also need to install GTK libraries. See:
+    # https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#windows
 
     # Generate a PDF report
     report.generate_report("compliance_report.pdf", format="pdf")
