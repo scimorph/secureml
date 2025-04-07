@@ -18,7 +18,7 @@ try:
         CTGANSynthesizer,
         TVAESynthesizer
     )
-    from sdv.metadata import SingleTableMetadata
+    from sdv.metadata import Metadata
     from sdv.constraints import FixedCombinations, Inequality, Unique
     SDV_AVAILABLE = True
 except ImportError:
@@ -800,19 +800,14 @@ def _generate_sensitive_values(col: str, data_series: pd.Series, num_samples: in
         elif "religion" in col_lower:
             categories = ["Religion 1", "Religion 2", "Religion 3", "None", "Other"]
         elif "country" in col_lower or "nation" in col_lower:
-            categories = [faker.country() for _ in range(min(len(value_counts), 20))]
+            # Generate a fixed number of unique countries, e.g., 20
+            categories = [faker.country() for _ in range(20)]
         else:
-            # Generic categories
-            categories = [f"Category {i+1}" for i in range(len(value_counts))]
+            # Match the number of unique values for consistency
+            categories = [f"Category {i+1}" for i in range(data_series.nunique())]
             
-        # Sample categories according to the original distribution
-        probs = value_counts.values
-        # If we have more categories in the original data, adjust the probabilities
-        if len(categories) < len(probs):
-            probs = probs[:len(categories)]
-            probs = probs / probs.sum()  # Renormalize
-            
-        synthetic_values = np.random.choice(categories, size=num_samples, p=probs)
+        # Sample uniformly, omitting the p parameter
+        synthetic_values = np.random.choice(categories, size=num_samples)
     # For string columns use appropriate faker providers
     else:
         if "name" in col_lower:
@@ -892,32 +887,43 @@ def _generate_sdv_synthetic(
         )
     
     # Create SDV metadata
-    metadata = SingleTableMetadata()
+    metadata = Metadata()
     metadata.detect_from_dataframe(df)
     
     # Apply constraints if provided
     sdv_constraints = []
     if constraints:
-        sdv_constraints = _create_sdv_constraints(constraints, df)
+        # Filter constraints to only include valid columns
+        for constraint in constraints:
+            constraint_type = constraint.get("type")
+            columns = constraint.get("columns", [])
+            if isinstance(columns, str):
+                columns = [columns]
+            # Check if all specified columns exist in df
+            if constraint_type == "unique" and all(col in df.columns for col in columns):
+                sdv_constraints.append({
+                    'constraint_class': 'Unique',
+                    'constraint_parameters': {'column_names': columns}
+                })
+            elif constraint_type == "unique":
+                print(f"Warning: Skipping Unique constraint for {columns}; some columns not found in data.")
     
-    # Select the appropriate synthesizer based on the type
+    # Select and initialize the appropriate synthesizer based on the type
     if synthesizer_type == "copula":
-        synthesizer = GaussianCopulaSynthesizer(
-            metadata, constraints=sdv_constraints, **kwargs
-        )
+        synthesizer = GaussianCopulaSynthesizer(metadata, **kwargs)
     elif synthesizer_type == "ctgan":
-        synthesizer = CTGANSynthesizer(
-            metadata, constraints=sdv_constraints, **kwargs
-        )
+        synthesizer = CTGANSynthesizer(metadata, **kwargs)
     elif synthesizer_type == "tvae":
-        synthesizer = TVAESynthesizer(
-            metadata, constraints=sdv_constraints, **kwargs
-        )
+        synthesizer = TVAESynthesizer(metadata, **kwargs)
     else:
         raise ValueError(
             f"Invalid synthesizer type: {synthesizer_type}. "
             f"Must be one of 'copula', 'ctgan', or 'tvae'."
         )
+    
+    # Add constraints to the synthesizer if any exist
+    if sdv_constraints:
+        synthesizer.add_constraints(sdv_constraints)
     
     # Fit the synthesizer to the data
     synthesizer.fit(df)
@@ -993,36 +999,43 @@ def _preprocess_sensitive_columns(
 def _create_sdv_constraints(
     constraints: List[Dict[str, Any]],
     df: pd.DataFrame,
-) -> List[Any]:
+) -> List[Dict[str, Any]]:
     """
-    Create SDV constraint objects from constraint specifications.
+    Create SDV constraint dictionaries from constraint specifications.
     
     Args:
         constraints: List of constraint dictionaries
         df: The original dataframe
         
     Returns:
-        List of SDV constraint objects
+        List of SDV constraint dictionaries
     """
     sdv_constraints = []
-    
     for constraint in constraints:
         constraint_type = constraint.get("type")
-        
         if constraint_type == "unique":
             columns = constraint.get("columns", [])
-            sdv_constraints.append(Unique(columns))
-            
+            sdv_constraints.append({
+                'constraint_class': 'Unique',
+                'constraint_parameters': {'column_names': columns}
+            })
         elif constraint_type == "fixed_combinations":
             column_names = constraint.get("column_names", [])
-            sdv_constraints.append(FixedCombinations(column_names))
-            
+            sdv_constraints.append({
+                'constraint_class': 'FixedCombinations',
+                'constraint_parameters': {'column_names': column_names}
+            })
         elif constraint_type == "inequality":
             low_column = constraint.get("low_column")
             high_column = constraint.get("high_column")
             if low_column and high_column:
-                sdv_constraints.append(Inequality(low_column, high_column))
-    
+                sdv_constraints.append({
+                    'constraint_class': 'Inequality',
+                    'constraint_parameters': {
+                        'low_column_name': low_column,
+                        'high_column_name': high_column
+                    }
+                })
     return sdv_constraints
 
 
