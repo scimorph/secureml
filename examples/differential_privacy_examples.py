@@ -81,7 +81,8 @@ def example_pytorch_dp():
         learning_rate=0.001,
         validation_split=0.1,
         framework="pytorch",
-        verbose=True
+        verbose=True,
+        criterion=nn.BCELoss()
     )
     
     # Evaluate the model

@@ -39,14 +39,18 @@ def run_tf_privacy_function(function_path: str, args: Dict[str, Any]) -> Dict[st
     
     output_path = input_path + '.output.json'
     
-    # Create the runner script content
+    # Replace backslashes with forward slashes for cross-platform compatibility
+    input_path_normalized = input_path.replace("\\", "/")
+    output_path_normalized = output_path.replace("\\", "/")
+    
+    # Create the runner script content with normalized paths
     runner_script = f"""
 import json
 import sys
 import traceback
 
 # Load input arguments
-with open("{input_path}") as f:
+with open("{input_path_normalized}") as f:
     args = json.load(f)
 
 try:
@@ -59,13 +63,13 @@ try:
     result = function(**args)
     
     # Save the result
-    with open("{output_path}", 'w') as f:
+    with open("{output_path_normalized}", 'w') as f:
         json.dump(result, f, indent=2)
     
     sys.exit(0)
 except Exception as e:
     # Save error information
-    with open("{output_path}", 'w') as f:
+    with open("{output_path_normalized}", 'w') as f:
         error_info = {{
             "success": False,
             "error": str(e),
@@ -76,8 +80,8 @@ except Exception as e:
     sys.exit(1)
 """
     
-    # Write the runner script to a temporary file
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as script_file:
+    # Write the runner script to a temporary file with explicit UTF-8 encoding
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as script_file:
         script_path = script_file.name
         script_file.write(runner_script)
     
@@ -151,15 +155,15 @@ def _get_or_create_venv() -> str:
             capture_output=True,
         )
         
-        # Determine pip executable path
+        # Determine Python executable path
         if sys.platform.startswith('win'):
-            pip_executable = os.path.join(venv_path, 'Scripts', 'pip.exe')
+            python_executable = os.path.join(venv_path, 'Scripts', 'python.exe')
         else:
-            pip_executable = os.path.join(venv_path, 'bin', 'pip')
+            python_executable = os.path.join(venv_path, 'bin', 'python')
         
-        # Upgrade pip
+        # Upgrade pip using python -m pip
         subprocess.run(
-            [pip_executable, "install", "--upgrade", "pip"],
+            [python_executable, "-m", "pip", "install", "--upgrade", "pip"],
             check=True,
             capture_output=True,
         )
@@ -167,23 +171,23 @@ def _get_or_create_venv() -> str:
         # Install tensorflow and tensorflow-privacy
         print("Installing TensorFlow Privacy in the isolated environment...")
         subprocess.run(
-            [pip_executable, "install", "tensorflow>=2.4.0,<2.10.0", "tensorflow-privacy"],
+            [python_executable, "-m", "pip", "install", "tensorflow==2.15.0", "tensorflow-privacy"],
             check=True,
             capture_output=True,
         )
         
         # Install other dependencies
         subprocess.run(
-            [pip_executable, "install", "numpy", "pandas"],
+            [python_executable, "-m", "pip", "install", "numpy", "pandas"],
             check=True,
             capture_output=True,
         )
         
-        # Install SecureML in development mode if this is a development setup
+        # Install SecureML in development mode if applicable
         secureml_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
         if os.path.exists(os.path.join(secureml_path, "setup.py")):
             subprocess.run(
-                [pip_executable, "install", "-e", secureml_path],
+                [python_executable, "-m", "pip", "install", "-e", secureml_path],
                 check=True,
                 capture_output=True,
             )

@@ -171,7 +171,7 @@ def _train_with_opacus(
     # Create a DataLoader for training
     train_dataset = torch.utils.data.TensorDataset(
         torch.tensor(x_train, dtype=torch.float32),
-        torch.tensor(y_train, dtype=torch.long)
+        torch.tensor(y_train, dtype=torch.float32).reshape(-1, 1)
     )
     train_loader = torch.utils.data.DataLoader(
         train_dataset, 
@@ -184,11 +184,11 @@ def _train_with_opacus(
     if x_val is not None and y_val is not None:
         val_dataset = torch.utils.data.TensorDataset(
             torch.tensor(x_val, dtype=torch.float32),
-            torch.tensor(y_val, dtype=torch.long)
+            torch.tensor(y_val, dtype=torch.float32).reshape(-1, 1)  # Updated
         )
         val_loader = torch.utils.data.DataLoader(
-            val_dataset, 
-            batch_size=batch_size, 
+            val_dataset,
+            batch_size=batch_size,
             shuffle=False
         )
 
@@ -419,8 +419,8 @@ def _train_with_tf_privacy(
     with tempfile.TemporaryDirectory() as temp_dir:
         # Save the model architecture and weights
         model_json_path = os.path.join(temp_dir, "model_architecture.json")
-        weights_path = os.path.join(temp_dir, "model_weights.h5")
-        final_weights_path = os.path.join(temp_dir, "final_weights.h5")
+        weights_path = os.path.join(temp_dir, "model_weights.weights.h5")
+        final_weights_path = os.path.join(temp_dir, "final_weights.weights.h5")
         
         # Serialize model architecture to JSON
         model_json = model.to_json()
@@ -446,8 +446,8 @@ def _train_with_tf_privacy(
             "target_column": target_column,
             "data_type": data_type,
             "model_architecture_path": model_json_path,
-            "weights_path": weights_path,
-            "final_weights_path": final_weights_path,
+            "weights_path": weights_path,  # Now "model_weights.weights.h5"
+            "final_weights_path": final_weights_path,  # Now "final_weights.weights.h5"
             "batch_size": batch_size,
             "epochs": epochs,
             "learning_rate": learning_rate,
