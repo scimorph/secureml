@@ -10,16 +10,16 @@ documentation = "https://secureml.readthedocs.io"
 keywords = ["machine learning", "privacy", "security", "compliance", "gdpr"]
 
 [tool.poetry.dependencies]
-python = ">=3.11,<3.12"
-numpy = "^1.24.3"
-pandas = "^1.5.3"
+python = ">=3.11,<3.13"
+numpy = "^1.26.4"
+pandas = "^2.2.3"
 opacus = "^1.5.3"
 # tensorflow-privacy removed and handled via isolated environment
 scikit-learn = "^1.6.1"
 spacy = "^3.8.3"
 faker = "^37.0.1"
 pyyaml = "6.0.2"
-flwr = "^1.12.0"
+flwr = "^1.17.0"
 sdv = "*"
 jinja2 = "^3.1.4"
 matplotlib = "^3.7.1"
@@ -56,7 +56,7 @@ profile = "black"
 line_length = 88
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
