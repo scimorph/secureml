@@ -8,7 +8,7 @@ Overview
 SecureML uses isolated virtual environments to manage dependencies that have conflicting requirements with the main package. This architectural approach allows SecureML to seamlessly integrate with packages like TensorFlow Privacy, which requires specific package versions that would otherwise conflict with SecureML's core dependencies.
 
 .. note::
-   Currently, the primary use case for isolated environments is TensorFlow Privacy, which requires ``packaging ~= 22.0``, while other SecureML dependencies require ``packaging >= 24.0``.
+   Currently, the primary use case for isolated environments is TensorFlow Privacy, which requires ``packaging ~= 22.0``, while other SecureML dependencies require ``packaging >= 24.0``. The isolated environment requires Python 3.11. If your main SecureML environment uses a different Python version (e.g., 3.12), you must set the ``TF_PRIVACY_PYTHON`` environment variable to point to a Python 3.11 executable.
 
 Why Isolated Environments?
 -------------------------
@@ -60,13 +60,13 @@ Default Behavior
 By default, when you call ``differentially_private_train()`` with ``framework="tensorflow"``, SecureML will:
 
 1. Check if the TensorFlow Privacy environment exists
-2. Create it if it doesn't exist (this happens only once)
+2. Create it if it doesn't exist (this happens only once), using Python 3.11
 3. Send your model and data to the isolated environment
 4. Run the training in the isolated environment
 5. Return the trained model back to your main environment
 
 Example Usage
-^^^^^^^^^^^^
+^^^^^^^^^^^^^
 
 .. code-block:: python
 
@@ -115,6 +115,12 @@ SecureML provides CLI commands to manage isolated environments:
     # Check the status of isolated environments
     secureml environments info
 
+.. note::
+   If your main Python environment is not Python 3.11, set the ``TF_PRIVACY_PYTHON`` environment variable to the path of a Python 3.11 executable before running these commands. For example:
+   
+   - **Linux/macOS**: ``export TF_PRIVACY_PYTHON=/usr/bin/python3.11``
+   - **Windows**: ``set TF_PRIVACY_PYTHON=C:\Python311\python.exe``
+
 Using the API
 ^^^^^^^^^^^^
 
@@ -151,7 +157,7 @@ By default, isolated environments are created at:
 
 The environment contains:
 
-- Python interpreter
+- Python 3.11 interpreter
 - TensorFlow (compatible version)
 - TensorFlow Privacy
 - NumPy and Pandas
@@ -170,19 +176,32 @@ Troubleshooting
 
 If you encounter issues with the isolated environment:
 
-1. **Recreate the environment**:
+1. **Ensure Python 3.11 is used**:
+   If your main environment uses Python 3.12 or another version, set the ``TF_PRIVACY_PYTHON`` environment variable:
+   
+   .. code-block:: bash
+   
+       # Linux/macOS
+       export TF_PRIVACY_PYTHON=/usr/bin/python3.11
+       secureml environments setup-tf-privacy
+       
+       # Windows
+       set TF_PRIVACY_PYTHON=C:\Python311\python.exe
+       secureml environments setup-tf-privacy
+
+2. **Recreate the environment**:
 
    .. code-block:: bash
 
        secureml environments setup-tf-privacy --force
 
-2. **Check for errors during setup**:
+3. **Check for errors during setup**:
 
    .. code-block:: bash
 
        secureml environments setup-tf-privacy --verbose
 
-3. **Verify installed packages**:
+4. **Verify installed packages**:
 
    .. code-block:: bash
 
@@ -192,7 +211,7 @@ If you encounter issues with the isolated environment:
        # Windows
        %USERPROFILE%\.secureml\tf_privacy_venv\Scripts\pip list
 
-4. **Manual cleanup** (if necessary):
+5. **Manual cleanup** (if necessary):
 
    .. code-block:: bash
 
@@ -204,28 +223,29 @@ If you encounter issues with the isolated environment:
        secureml environments setup-tf-privacy
 
 Performance Considerations
-^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^
 
 - **First-time setup**: The first time you use TensorFlow Privacy functionality, there will be a delay as the environment is created and packages are installed
 - **Subsequent usage**: After the initial setup, the overhead is minimal, primarily related to data serialization/deserialization
 - **Memory usage**: The isolated environment runs in a separate process, which requires additional memory
 
 Implementation Details
---------------------
+---------------------
 
 For developers interested in how isolated environments are implemented:
 
 - The `run_tf_privacy_function()` function manages the execution of code in the isolated environment
 - Communication happens through temporary files containing JSON-serialized data
-- A subprocess is created to run Python code in the isolated environment
+- A subprocess is created to run Python code in the isolated environment using a Python 3.11 interpreter
 - The result is returned through another temporary file
+- The Python 3.11 requirement is enforced by checking the current interpreter version or the ``TF_PRIVACY_PYTHON`` environment variable; if neither provides Python 3.11, an error is raised with instructions
 
 Future Plans
-^^^^^^^^^^^
+^^^^^^^^^^^^
 
 In future releases, we plan to:
 
 - Support custom environment locations
 - Add more isolated environments for other conflicting dependencies
 - Improve error reporting and logging
-- Add support for memory-mapped communication for better performance with large datasets 
+- Add support for memory-mapped communication for better performance with large datasets
