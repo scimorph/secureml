@@ -146,11 +146,25 @@ def _get_or_create_venv() -> str:
     
     # Create the virtual environment
     print("Creating isolated virtual environment for TensorFlow Privacy...")
+
+    # Determine the Python executable to use
+    tf_privacy_python = os.environ.get("TF_PRIVACY_PYTHON")
+    if tf_privacy_python:
+        python_executable = tf_privacy_python
+    elif sys.version_info[:2] == (3, 11):
+        python_executable = sys.executable
+    else:
+        raise RuntimeError(
+            "The isolated environment for TensorFlow Privacy requires Python 3.11.\n"
+            "Please set the TF_PRIVACY_PYTHON environment variable to the path of a Python 3.11 executable.\n"
+            "For example, on Unix-like systems: export TF_PRIVACY_PYTHON=/usr/bin/python3.11\n"
+            "On Windows: set TF_PRIVACY_PYTHON=C:\\Python311\\python.exe"
+        )
     
     try:
-        # Create virtual environment
+        # Create virtual environment with the chosen executable
         subprocess.run(
-            [sys.executable, "-m", "venv", venv_path],
+            [python_executable, "-m", "venv", venv_path],
             check=True,
             capture_output=True,
         )
@@ -229,6 +243,18 @@ def _is_venv_valid(venv_path: str) -> bool:
         python_executable = os.path.join(venv_path, 'bin', 'python')
     
     if not os.path.exists(python_executable):
+        return False
+    
+    # Check Python version
+    try:
+        result = subprocess.run(
+            [python_executable, "-c", "import sys; print('.'.join(map(str, sys.version_info[:2])))"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0 or result.stdout.strip() != "3.11":
+            return False
+    except Exception:
         return False
     
     # Check if required packages are installed
