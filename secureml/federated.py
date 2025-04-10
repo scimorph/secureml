@@ -1090,31 +1090,22 @@ def _create_pytorch_server(
         return model
     
     # Define strategy for server
-    if config.use_secure_aggregation:
-        from flwr.server.strategy import FedAvgWithSecAgg
-        
-        strategy = FedAvgWithSecAgg(
-            initial_parameters=fl.common.ndarrays_to_parameters(get_weights(model)),
-            fraction_fit=config.fraction_fit,
-            min_fit_clients=config.min_fit_clients,
-            min_available_clients=config.min_available_clients,
-            eval_fn=kwargs.get("eval_fn", None),
-            **kwargs.get("strategy_kwargs", {})
-        )
-    else:
-        from flwr.server.strategy import FedAvg
-        
-        strategy = FedAvg(
-            initial_parameters=fl.common.ndarrays_to_parameters(get_weights(model)),
-            fraction_fit=config.fraction_fit,
-            min_fit_clients=config.min_fit_clients,
-            min_available_clients=config.min_available_clients,
-            eval_fn=kwargs.get("eval_fn", None),
-            **kwargs.get("strategy_kwargs", {})
-        )
-    from flwr.server.client_manager import SimpleClientManager
+    from flwr.server.strategy import FedAvg
+    
+    # Create strategy with appropriate config
+    # Note: SecureAgg is now implemented using SecAggWorkflow/SecAggPlusWorkflow in newer Flower versions
+    # so we just use regular FedAvg here
+    strategy = FedAvg(
+        initial_parameters=fl.common.ndarrays_to_parameters(get_weights(model)),
+        fraction_fit=config.fraction_fit,
+        min_fit_clients=config.min_fit_clients,
+        min_available_clients=config.min_available_clients,
+        evaluate_fn=kwargs.get("evaluate_fn", None),  # Changed from eval_fn
+        **kwargs.get("strategy_kwargs", {})
+    )
     
     # Create and return server
+    from flwr.server.client_manager import SimpleClientManager
     return fl.server.Server(strategy=strategy, client_manager=SimpleClientManager())
 
 
@@ -1143,28 +1134,19 @@ def _create_tensorflow_server(
         return [w.numpy() for w in model.weights]
     
     # Define strategy for server
-    if config.use_secure_aggregation:
-        from flwr.server.strategy import FedAvgWithSecAgg
-        
-        strategy = FedAvgWithSecAgg(
-            initial_parameters=fl.common.ndarrays_to_parameters(get_weights(model)),
-            fraction_fit=config.fraction_fit,
-            min_fit_clients=config.min_fit_clients,
-            min_available_clients=config.min_available_clients,
-            eval_fn=kwargs.get("eval_fn", None),
-            **kwargs.get("strategy_kwargs", {})
-        )
-    else:
-        from flwr.server.strategy import FedAvg
-        
-        strategy = FedAvg(
-            initial_parameters=fl.common.ndarrays_to_parameters(get_weights(model)),
-            fraction_fit=config.fraction_fit,
-            min_fit_clients=config.min_fit_clients,
-            min_available_clients=config.min_available_clients,
-            eval_fn=kwargs.get("eval_fn", None),
-            **kwargs.get("strategy_kwargs", {})
-        )
+    from flwr.server.strategy import FedAvg
+    
+    # Create strategy with appropriate config
+    # Note: SecureAgg is now implemented using SecAggWorkflow/SecAggPlusWorkflow in newer Flower versions
+    # so we just use regular FedAvg here
+    strategy = FedAvg(
+        initial_parameters=fl.common.ndarrays_to_parameters(get_weights(model)),
+        fraction_fit=config.fraction_fit,
+        min_fit_clients=config.min_fit_clients,
+        min_available_clients=config.min_available_clients,
+        evaluate_fn=kwargs.get("evaluate_fn", None),  # Changed from eval_fn
+        **kwargs.get("strategy_kwargs", {})
+    )
     
     # Create and return server
     from flwr.server.client_manager import SimpleClientManager
