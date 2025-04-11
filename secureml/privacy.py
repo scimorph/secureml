@@ -342,24 +342,47 @@ def _prepare_data_for_torch(data: Union[pd.DataFrame, np.ndarray], **kwargs: Any
         
     Returns:
         Tuple of (features, labels) as numpy arrays
-    """
-    # If data is a DataFrame
-    if isinstance(data, pd.DataFrame):
-        # Check if target column is specified
-        target_col = kwargs.get("target_column")
         
-        if target_col is not None and target_col in data.columns:
-            # Extract features and target
+    Raises:
+        ValueError: If data is empty or has insufficient columns
+        KeyError: If specified target_column is not found
+        TypeError: If data type is unsupported
+    """
+    if isinstance(data, pd.DataFrame):
+        # Check for empty DataFrame
+        if data.shape[0] == 0:
+            raise ValueError("DataFrame has no rows")
+        
+        target_col = kwargs.get("target_column")
+        if target_col is not None:
+            if target_col not in data.columns:
+                raise KeyError(f"Target column '{target_col}' not found in DataFrame")
             x = data.drop(columns=[target_col]).values
             y = data[target_col].values
         else:
-            # Assume last column is the target
+            if data.shape[1] < 2:
+                raise ValueError("DataFrame must have at least two columns if target_column is not specified")
             x = data.iloc[:, :-1].values
             y = data.iloc[:, -1].values
-    else:
-        # If data is a numpy array, assume last column is the target
+        
+        # Ensure at least one feature column remains
+        if x.shape[1] == 0:
+            raise ValueError("No features available after extracting target")
+    
+    elif isinstance(data, np.ndarray):
+        # Check array dimensions and shape
+        if data.ndim != 2:
+            raise ValueError("Numpy array must be 2-dimensional")
+        if data.shape[0] == 0:
+            raise ValueError("Numpy array has no rows")
+        if data.shape[1] < 2:
+            raise ValueError("Numpy array must have at least two columns (features and target)")
+        
         x = data[:, :-1]
         y = data[:, -1]
+    
+    else:
+        raise TypeError("Data must be a pandas DataFrame or a numpy array")
     
     return x, y
 
