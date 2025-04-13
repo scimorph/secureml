@@ -29,13 +29,26 @@ SecureML is an open-source Python library that integrates with popular machine l
   - Federated learning with Flower, allowing training on distributed data without centralization
   - Support for secure aggregation and privacy-preserving federated learning
 - **Compliance Checkers**: Tools to analyze datasets and model configurations for potential privacy risks
-- **Synthetic Data Generation**: Utilities to create synthetic datasets that mimic real data
+- **Synthetic Data Generation**: 
+  - Multiple generation methods including statistical modeling, GANs, and copulas
+  - SDV integration with Gaussian Copula, CTGAN, and TVAE synthesizers
+  - Automatic sensitive data detection and special handling
+  - Preservation of statistical properties and correlations between variables
+  - Support for mixed data types (numeric, categorical, datetime)
+  - Configurable privacy-utility tradeoff controls
+  - Tabular data synthesis with relation preservation
 - **Regulation-Specific Presets**: 
   - Pre-configured YAML settings aligned with major regulations (GDPR, CCPA, HIPAA)
   - Detailed compliance requirements for each regulation
   - Customizable identifiers for personal data and sensitive information
   - Integration with compliance checking functionality
-- **Audit Trails and Reporting**: Automatic logging of privacy measures and model decisions
+- **Audit Trails and Reporting**: 
+  - Comprehensive audit logging of data access, transformations, and model operations
+  - Detailed event tracking for privacy-related operations with timestamps and contexts
+  - Function-level auditing through decorators
+  - Automated compliance reports in HTML and PDF formats
+  - Visual dashboards with charts showing privacy metrics and event distributions
+  - Integration with compliance checkers for continuous monitoring
 
 ## Installation
 
