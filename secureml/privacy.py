@@ -46,6 +46,9 @@ def differentially_private_train(
         ValueError: If the framework is not supported or cannot be detected
         ImportError: If the required dependencies are not installed
     """
+    if epsilon <= 0:
+        raise ValueError("Epsilon must be a positive number.")
+    
     # Determine which framework to use
     if framework == "auto":
         framework = _detect_framework(model)
@@ -162,8 +165,12 @@ def _train_with_opacus(
         train_indices = indices[val_size:]
         val_indices = indices[:val_size]
         
-        x_train, y_train = x_data[train_indices], y_data[train_indices]
-        x_val, y_val = x_data[val_indices], y_data[val_indices]
+        # Ensure x_train and x_val are 2D
+        x_train = np.atleast_2d(x_data[train_indices])
+        y_train = y_data[train_indices]
+        
+        x_val = np.atleast_2d(x_data[val_indices])
+        y_val = y_data[val_indices]
     else:
         x_train, y_train = x_data, y_data
         x_val, y_val = None, None
