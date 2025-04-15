@@ -68,7 +68,14 @@ def main():
         # Load and display some key information from the preset
         preset = load_preset(regulation)
         print(f"Regulation: {preset['regulation']['name']} - {preset['regulation']['description']}")
-        print(f"Effective Date: {preset['regulation']['effective_date']}\n")
+        
+        # Special handling for HIPAA with multiple effective dates
+        if regulation.lower() == 'hipaa':
+            print(f"Privacy Rule Effective: {preset['regulation']['privacy_rule_effective']}")
+            print(f"Security Rule Effective: {preset['regulation']['security_rule_effective']}")
+            print(f"Breach Notification Effective: {preset['regulation']['breach_notification_effective']}\n")
+        else:
+            print(f"Effective Date: {preset['regulation']['effective_date']}\n")
         
         # Perform compliance check
         report = check_compliance(
