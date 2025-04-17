@@ -14,6 +14,7 @@ Core Concepts
 * **GDPR**: General Data Protection Regulation (European Union)
 * **CCPA**: California Consumer Privacy Act
 * **HIPAA**: Health Insurance Portability and Accountability Act
+* **LGPD**: Brazilian General Data Protection Law (Brazil)
 
 **Compliance Levels**:
 
@@ -237,6 +238,14 @@ Each regulation has specific checks based on its requirements:
 - Protected Health Information (PHI) identification
 - De-identification method verification
 - Data security and encryption
+
+**LGPD Checks**:
+- Personal data identification
+- Sensitive data identification
+- Data minimization
+- Explicit consent
+- Right to be forgotten capability
+- Cross-border data transfer
 
 Regulation Presets
 ----------------

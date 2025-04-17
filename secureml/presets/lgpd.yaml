@@ -1,0 +1,133 @@
+# LGPD (Lei Geral de Proteção de Dados Pessoais) Compliance Preset
+# This preset defines the requirements for complying with Brazil's LGPD
+
+regulation:
+  name: "LGPD"
+  description: "Brazilian General Data Protection Law"
+  version: "Lei Nº 13.709/2018"
+  effective_date: "2020-09-18"
+
+# Personal data identifiers (Dados pessoais)
+personal_data_identifiers:
+  - nome # name
+  - email
+  - telefone # phone
+  - endereço # address
+  - ip_address
+  - cpf # Individual Taxpayer Registry ID
+  - rg # General Registry ID (ID card)
+  - data_de_nascimento # date_of_birth
+  - dados_de_localização # location_data
+  - id_de_cookie # cookie_id
+  - id_de_dispositivo # device_id
+
+# Sensitive personal data (Dados pessoais sensíveis)
+sensitive_personal_data: # Renamed from special_categories for clarity
+  - origem_racial_ou_etnica # racial or ethnic origin
+  - convicção_religiosa # religious conviction
+  - opinião_política # political opinion
+  - filiação_a_sindicato # trade union membership
+  - organização_de_caráter_religioso_filosófico_ou_político # religious, philosophical or political organization
+  - dado_referente_à_saúde # health data
+  - vida_sexual # sex life
+  - dado_genético # genetic data
+  - dado_biométrico # biometric data
+
+# Data processing principles (similar to GDPR's data minimization)
+data_processing_principles:
+  purpose_limitation: true
+  necessity: true # Equivalent to minimization
+  data_quality: true
+  retention_period: "no longer than necessary for the purpose"
+  requirements:
+    - "Process data only for legitimate, specific, explicit, and informed purposes"
+    - "Limit processing to the minimum necessary for the purposes"
+    - "Ensure data accuracy, clarity, relevance, and updating"
+    - "Delete data after the end of processing or when requested"
+
+# Legal bases for processing (similar to GDPR consent, but broader)
+legal_bases:
+  consent_required: true # Consent is one basis, but others exist
+  bases:
+    - "Consent"
+    - "Compliance with legal or regulatory obligation"
+    - "Execution of public policies"
+    - "Research (anonymized where possible)"
+    - "Execution of a contract"
+    - "Exercise of rights in judicial, administrative or arbitral proceedings"
+    - "Protection of life or physical safety"
+    - "Protection of health"
+    - "Legitimate interests"
+    - "Credit protection"
+  consent_properties:
+    - "Freely given"
+    - "Informed"
+    - "Unambiguous"
+    - "Specific purpose"
+  metadata_fields: # Fields to check for demonstrating basis
+    - "processing_basis"
+    - "consent_obtained_date" # If consent is the basis
+    - "consent_withdrawal_method"
+
+# Data subject rights (Direitos do titular)
+data_subject_rights:
+  confirmation_of_processing: true
+  access: true
+  correction: true
+  anonymization_blocking_deletion: true # Right to anonymize, block, or delete unnecessary/non-compliant data
+  portability: true
+  deletion_with_consent: true # Deletion of data processed with consent
+  information_sharing: true # Information about public/private entities data shared with
+  information_on_denying_consent: true
+  revocation_of_consent: true
+
+# Model compliance requirements (adapt from GDPR)
+model_requirements:
+  supports_deletion_request: true # Covers anonymization_blocking_deletion
+  supports_access_request: true
+  supports_correction_request: true
+  supports_portability_request: true
+  automated_decision_requirements:
+    - "Right to review decisions made solely based on automated processing"
+
+# Data security requirements
+security:
+  technical_administrative_measures: true # LGPD requires security measures
+  encryption_recommended: true # Recommended, not strictly mandated like GDPR
+  access_controls: true
+  incident_notification: true # Notification to ANPD and data subjects
+  metadata_fields:
+    - "security_measures_implemented"
+    - "data_encrypted"
+    - "access_controls_implemented"
+    - "incident_notification_protocol"
+
+# International data transfer
+international_data_transfer:
+  allowed_mechanisms:
+    - "Countries with adequate protection level"
+    - "Standard contractual clauses"
+    - "Binding corporate rules"
+    - "Specific contractual clauses"
+    - "Seals, certificates, codes of conduct"
+    - "Consent"
+    - "International legal cooperation"
+    - "Protection of life/safety"
+    - "Execution of public policy"
+  metadata_fields:
+    - "international_transfer"
+    - "international_transfer_mechanism"
+    - "international_transfer_destination"
+
+# Documentation requirements
+documentation:
+  processing_records_required: true # Data Protection Impact Assessment (DPIA) or RIPD
+  dpia_required_for: # RIPD (Relatório de Impacto à Proteção de Dados Pessoais)
+    - "Processing based on legitimate interest"
+    - "Processing that may pose high risk to fundamental rights"
+  data_protection_officer_required: true # DPO (Encarregado) required
+  metadata_fields:
+    - "data_protection_officer_appointed"
+    - "dpo_contact_information"
+    - "processing_records_maintained"
+    - "data_impact_assessment_completed" 

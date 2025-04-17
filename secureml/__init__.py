@@ -2,7 +2,7 @@
 SecureML - A Python library for privacy-preserving machine learning.
 
 This library provides tools for handling sensitive data in AI/ML workflows
-while maintaining compliance with privacy regulations like GDPR, CCPA, and HIPAA.
+while maintaining compliance with privacy regulations like GDPR, CCPA, HIPAA, and LGPD.
 """
 
 __version__ = "0.2.4"

@@ -2,7 +2,7 @@
 Compliance checking functionality for SecureML.
 
 This module provides tools to verify that datasets and models
-comply with privacy regulations like GDPR, CCPA, or HIPAA.
+comply with privacy regulations like GDPR, CCPA, HIPAA, or LGPD.
 """
 
 from typing import Any, Dict, List, Optional, Union
@@ -221,7 +221,7 @@ def check_compliance(
         data: The dataset to check (DataFrame or dict with metadata)
         model_config: Optional configuration of the model to check
         regulation: The regulation to check compliance against ('GDPR', 'CCPA', 
-                   'HIPAA')
+                   'HIPAA', 'LGPD')
         max_samples: Maximum number of samples to analyze for content
         **kwargs: Additional parameters for specific compliance checks
 
@@ -267,6 +267,10 @@ def check_compliance(
         )
     elif regulation.upper() == "HIPAA":
         _check_hipaa_compliance(
+            data_df, metadata, model_config, report, max_samples, **kwargs
+        )
+    elif regulation.upper() == "LGPD":
+        _check_lgpd_compliance(
             data_df, metadata, model_config, report, max_samples, **kwargs
         )
     else:
@@ -574,6 +578,197 @@ def _check_hipaa_compliance(
         )
     else:
         report.add_passed_check("Data is properly encrypted")
+
+
+def _check_lgpd_compliance(
+    data: pd.DataFrame,
+    metadata: Dict[str, Any],
+    model_config: Optional[Dict[str, Any]],
+    report: ComplianceReport,
+    max_samples: int = 100,
+    **kwargs: Any,
+) -> None:
+    """
+    Check compliance with LGPD (Brazilian General Data Protection Law).
+
+    Args:
+        data: The dataset
+        metadata: Metadata about the dataset
+        model_config: Model configuration
+        report: The compliance report to update
+        max_samples: Maximum number of samples to analyze for content
+        **kwargs: Additional parameters
+    """
+    # Load LGPD preset fields
+    personal_data_identifiers = get_preset_field("lgpd", "personal_data_identifiers")
+    sensitive_personal_data = get_preset_field("lgpd", "sensitive_personal_data")
+    
+    # Check for personal data in the dataset using both column names and content
+    personal_data_info = identify_personal_data(
+        data, 
+        max_samples,
+        personal_identifiers=personal_data_identifiers,
+        sensitive_categories=sensitive_personal_data
+    )
+    
+    if personal_data_info["columns"]:
+        cols_str = ", ".join(personal_data_info["columns"])
+        report.add_issue(
+            component="Dataset",
+            issue=f"Personal data identified in columns: {cols_str}",
+            severity="high",
+            recommendation=(
+                "Ensure proper legal basis for processing this data and "
+                "consider pseudonymization or anonymization techniques."
+            ),
+        )
+    else:
+        report.add_passed_check("No personal data identified in dataset columns")
+    
+    if personal_data_info["content_findings"]:
+        findings = personal_data_info["content_findings"]
+        report.add_issue(
+            component="Dataset Content",
+            issue=f"Personal data found in content: {findings}",
+            severity="high",
+            recommendation=(
+                "Apply text redaction or anonymization to text fields containing personal data."
+            ),
+        )
+    else:
+        report.add_passed_check("No personal data identified in text content")
+
+    # Check for data processing principles
+    data_processing_requirements = get_preset_field("lgpd", "data_processing_principles.requirements")
+    if data_processing_requirements and len(data.columns) > 20:  # Similar threshold as GDPR
+        report.add_warning(
+            component="Dataset",
+            warning="Large number of columns may violate data necessity principle",
+            recommendation=(
+                "Review dataset to ensure only necessary data is collected "
+                "for the specified purpose"
+            ),
+        )
+    else:
+        report.add_passed_check(
+            "Dataset appears to follow data necessity principle"
+        )
+
+    # Check for legal basis metadata
+    legal_basis_fields = get_preset_field("lgpd", "legal_bases.metadata_fields")
+    if legal_basis_fields and not any(field in metadata for field in legal_basis_fields):
+        report.add_issue(
+            component="Metadata",
+            warning="No legal basis for processing identified",
+            severity="high",
+            recommendation=(
+                "Document the legal basis for processing personal data "
+                "(e.g., consent, legitimate interest, contract execution)"
+            ),
+        )
+    else:
+        report.add_passed_check("Legal basis for processing is documented")
+
+    # Check model for data subject rights support
+    if model_config is not None:
+        # Check for deletion support
+        if not model_config.get("supports_deletion_request", False):
+            report.add_issue(
+                component="Model",
+                issue="Model does not support deletion requests",
+                severity="high",
+                recommendation=(
+                    "Implement a mechanism to delete or anonymize specific data "
+                    "points when requested by data subjects"
+                ),
+            )
+        else:
+            report.add_passed_check("Model supports deletion requests")
+        
+        # Check for access and portability
+        if not model_config.get("supports_access_request", False):
+            report.add_warning(
+                component="Model",
+                warning="Model may not support data access requests",
+                recommendation=(
+                    "Implement a mechanism to provide data subjects with "
+                    "access to their personal data"
+                ),
+            )
+        else:
+            report.add_passed_check("Model supports data access requests")
+        
+        # Check for automated decision making
+        if model_config.get("uses_automated_decisions", False):
+            if not model_config.get("allows_human_review", False):
+                report.add_issue(
+                    component="Model",
+                    issue="Automated decision-making without human review option",
+                    severity="high",
+                    recommendation=(
+                        "Implement a mechanism for human review of automated decisions "
+                        "that affect data subjects"
+                    ),
+                )
+            else:
+                report.add_passed_check("Model allows human review of automated decisions")
+
+    # Check for security measures
+    data_security_field = get_preset_field("lgpd", "security.technical_administrative_measures")
+    if data_security_field and not metadata.get("security_measures_implemented", False):
+        report.add_warning(
+            component="Data Security",
+            warning="No documentation of security measures for data protection",
+            recommendation=(
+                "Implement and document technical and administrative security measures "
+                "appropriate to the nature of the data being processed"
+            ),
+        )
+    else:
+        report.add_passed_check("Security measures are documented")
+        
+    # Check for encryption, which is recommended under LGPD
+    if not metadata.get("data_encrypted", False):
+        report.add_warning(
+            component="Data Security",
+            warning="Data may not be encrypted",
+            recommendation=(
+                "Consider implementing encryption for sensitive personal data"
+            ),
+        )
+    else:
+        report.add_passed_check("Data is properly encrypted")
+        
+    # Check for international transfers
+    if metadata.get("international_transfer", False):
+        international_transfer_mechanism = metadata.get("international_transfer_mechanism")
+        allowed_mechanisms = get_preset_field("lgpd", "international_data_transfer.allowed_mechanisms")
+        if allowed_mechanisms and international_transfer_mechanism not in allowed_mechanisms:
+            report.add_issue(
+                component="Data Transfer",
+                issue="International data transfer without adequate safeguards",
+                severity="high",
+                recommendation=(
+                    "Implement one of the approved mechanisms for international data transfers: "
+                    f"{', '.join(allowed_mechanisms)}"
+                ),
+            )
+        else:
+            report.add_passed_check("International data transfers comply with LGPD")
+            
+    # Check for DPO appointment
+    if get_preset_field("lgpd", "documentation.data_protection_officer_required"):
+        if not metadata.get("data_protection_officer_appointed", False):
+            report.add_warning(
+                component="Organization",
+                warning="No Data Protection Officer (DPO) appears to be appointed",
+                recommendation=(
+                    "Appoint a Data Protection Officer (Encarregado) responsible for "
+                    "handling data subject requests and communications with the ANPD"
+                ),
+            )
+        else:
+            report.add_passed_check("Data Protection Officer has been appointed")
 
 
 def identify_personal_data(
@@ -1228,7 +1423,7 @@ class ComplianceAuditor:
                         )
                 
                 # Check for missing privacy steps based on regulation
-                if self.regulation.upper() in ["GDPR", "CCPA", "HIPAA"]:
+                if self.regulation.upper() in ["GDPR", "CCPA", "HIPAA", "LGPD"]:
                     if not has_anonymization:
                         preprocessing_report.add_warning(
                             component="Preprocessing",
@@ -1236,11 +1431,11 @@ class ComplianceAuditor:
                             recommendation="Consider adding anonymization techniques like k-anonymity or data masking"
                         )
                     
-                    if not has_minimization and self.regulation.upper() == "GDPR":
+                    if not has_minimization and self.regulation.upper() in ["GDPR", "LGPD"]:
                         preprocessing_report.add_warning(
                             component="Preprocessing",
                             warning="No data minimization steps found in preprocessing pipeline",
-                            recommendation="Consider adding data minimization steps to comply with GDPR's data minimization principle"
+                            recommendation=f"Consider adding data minimization steps to comply with {self.regulation}'s data minimization principle"
                         )
                 
                 results["preprocessing"] = preprocessing_report

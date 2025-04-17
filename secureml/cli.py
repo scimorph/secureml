@@ -126,7 +126,7 @@ def compliance():
 @click.option(
     "--regulation",
     "-r",
-    type=click.Choice(["GDPR", "CCPA", "HIPAA"]),
+    type=click.Choice(["GDPR", "CCPA", "HIPAA", "LGPD"]),
     required=True,
     help="Regulation to check compliance against",
 )
@@ -156,7 +156,7 @@ def check_compliance_cmd(input_file, regulation, metadata, model_config, output,
     """Check dataset and model compliance with privacy regulations.
     
     This command checks a dataset and optional model configuration against
-    privacy regulations like GDPR, CCPA, or HIPAA.
+    privacy regulations like GDPR, CCPA, HIPAA, or LGPD.
     
     Examples:
         secureml compliance check data.csv --regulation GDPR

@@ -38,7 +38,7 @@ SecureML is an open-source Python library that integrates with popular machine l
   - Configurable privacy-utility tradeoff controls
   - Tabular data synthesis with relation preservation
 - **Regulation-Specific Presets**: 
-  - Pre-configured YAML settings aligned with major regulations (GDPR, CCPA, HIPAA)
+  - Pre-configured YAML settings aligned with major regulations (GDPR, CCPA, HIPAA, LGPD)
   - Detailed compliance requirements for each regulation
   - Customizable identifiers for personal data and sensitive information
   - Integration with compliance checking functionality
@@ -102,7 +102,7 @@ anonymized_data = anonymize(
 
 ### Compliance Checking with Regulation Presets
 
-SecureML includes built-in presets for major regulations (GDPR, CCPA, HIPAA) that define the compliance requirements specific to each regulation:
+SecureML includes built-in presets for major regulations (GDPR, CCPA, HIPAA, LGPD) that define the compliance requirements specific to each regulation:
 
 ```python
 import pandas as pd
@@ -195,7 +195,7 @@ For detailed documentation, examples, and API reference, visit [our documentatio
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request or Issue.
-Our focus is expanding supported legislations beyond GDPR, CCPA, and HIPAA. You can help us with that!
+Our focus is expanding supported legislations beyond GDPR, CCPA, HIPAA, and LGPD. You can help us with that!
 
 ## License
 
