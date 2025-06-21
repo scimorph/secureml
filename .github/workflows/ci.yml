@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [ '3.11', '3.12' ]
+        python-version: [ '3.11', '3.12', '3.13' ]
 
     steps:
     - uses: actions/checkout@v4
@@ -34,18 +34,18 @@ jobs:
         cache: 'pip'
     
     - name: Install Poetry
-      run: |
-        curl -sSL https://install.python-poetry.org | python3 -
-        echo "$HOME/.local/bin" >> $GITHUB_PATH
-    
-    - name: Configure Poetry
-      run: poetry config virtualenvs.in-project true
+      uses: snok/install-poetry@v1 # A more robust way to install poetry
+      with:
+        virtualenvs-in-project: true
     
     - name: Cache Poetry dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@v4 # Use the latest version of the cache action
       with:
-        path: .venv
-        key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
+        # This caches the downloaded packages, not the installed venv
+        path: ~/.cache/pypoetry/virtualenvs
+        key: ${{ runner.os }}-poetry-${{ matrix.python-version }}-${{ hashFiles('**/poetry.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-poetry-${{ matrix.python-version }}-
     
     - name: Install dependencies
       run: |
@@ -72,15 +72,21 @@ jobs:
           cache: 'pip'
       
       - name: Install Poetry
-        run: |
-          curl -sSL https://install.python-poetry.org | python3 -
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+        uses: snok/install-poetry@v1
+        with:
+          virtualenvs-in-project: true
       
-      - name: Configure Poetry
-        run: poetry config virtualenvs.in-project true
+      - name: Cache Poetry dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: ${{ runner.os }}-poetry-3.11-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-poetry-3.11-
       
-      - name: Build package
+      - name: Install and Build
         run: |
+          poetry install
           poetry build
       
       - name: Upload artifacts
