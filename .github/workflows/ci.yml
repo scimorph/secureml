@@ -53,7 +53,7 @@ jobs:
         
     - name: Install PyTorch CPU (after poetry)
       run: |
-        poetry run pip install torch==2.6.0+cpu torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+        poetry run pip install torch==2.7.1+cpu torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
     - name: Run tests
       run: |
