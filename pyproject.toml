@@ -51,12 +51,65 @@ secureml = "secureml.cli:cli"
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
-[tool.black]
-line-length = 88
+[tool.ruff]
+# Set the maximum line length. The default is 88, which is the same as Black.
+line-length = 120
+target-version = "py311"
 
-[tool.isort]
-profile = "black"
-line_length = 88
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+   ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # Pyflakes
+    "W",   # pycodestyle (warnings)
+    "N",   # pep8-naming
+    "I",   # isort (import sorting)
+    "UP",  # pyupgrade (modernize Python code)
+    "B",   # flake8-bugbear (finds potential bugs)
+    "C4",  # flake8-comprehensions (encourages more Pythonic comprehensions)
+    "DTZ", # flake8-datetimez
+    "SIM", # flake8-simplify (simplifies code)
+    "TID", # flake8-tidy-imports (better import structuring)
+    "RUF", # ruff-specific rules
+]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+known-first-party = ["secureml"]
+
+# Allow unused variables in `__init__.py` files, which is common.
+# Also, relax rules for test files (e.g., allow `assert` and magic values).
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/*" = ["S101", "F841", "PLR2004"] # Allow `assert` and unused variables in tests
+
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
 
 [tool.mypy]
 python_version = "3.11"
