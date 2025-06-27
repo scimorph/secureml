@@ -20,7 +20,7 @@ scikit-learn = "^1.7.0"
 spacy = "^3.8.7"
 faker = "^37.0.1"
 pyyaml = "6.0.2"
-flwr = { extras = ["simulation"], version = "^1.18.0" }
+flwr = { extras = ["simulation"], version = "^1.19.0" }
 sdv = "*"
 jinja2 = "^3.1.4"
 matplotlib = "^3.10.3"
