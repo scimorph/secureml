@@ -481,7 +481,7 @@ class ReportGenerator:
             "report": report,
             "generation_time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "css": self._get_css(),
-            "secureml_version": "0.3.0"
+            "secureml_version": "0.3.1"
         }
         
         # Add logo if provided
@@ -593,7 +593,7 @@ class ReportGenerator:
             "metadata": metadata,
             "generation_time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "css": self._get_css(),
-            "secureml_version": "0.3.0"
+            "secureml_version": "0.3.1"
         }
         
         # Add logo if provided
